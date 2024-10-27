@@ -17,7 +17,7 @@ class Decode:
         self.get_input()
         self.rar = 'bin\\rar.exe'
         self.zip = f'cache\\{self.title}.zip'
-        self.password = 'Seshu@9989'
+        self.password = 'Seshu@9989' #Sample password
 
         self.extract_zip()
         self.extract_video()
