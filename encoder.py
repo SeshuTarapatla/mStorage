@@ -25,7 +25,7 @@ class Encode:
         self.zip = f'cache\\{self.title}.zip'
         self.mask = f'cache\\mask.mp4'
         self.ffmpeg = 'bin\\ffmpeg.exe'
-        self.password = 'Seshu@9989' #Sample password
+        self.password = '' #Sample password
 
         self.generate_mask_video()
         self.generate_zip_file()
