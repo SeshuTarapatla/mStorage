@@ -23,3 +23,4 @@ class Nuitka:
 if __name__ == '__main__':
     Nuitka.build('decoder.py')
     Nuitka.build('encoder.py')
+    Nuitka.build('player.py')
