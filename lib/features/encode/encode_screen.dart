@@ -178,7 +178,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
         ? p.basenameWithoutExtension(_videoPath!)
         : _titleCtrl.text.trim();
     final outDir = settings.outputDirectory.isEmpty
-        ? p.dirname(_videoPath!)
+        ? p.join(p.dirname(_videoPath!), 'output')
         : settings.outputDirectory;
 
     await ref.read(encodeProvider.notifier).run(
@@ -200,6 +200,13 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
     final encodeState = ref.watch(encodeProvider);
     final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
+
+    final customDir = settings.outputDirectory;
+    final displayOutDir = customDir.isNotEmpty
+        ? customDir
+        : (_videoPath != null
+            ? p.join(p.dirname(_videoPath!), 'output')
+            : '');
 
     final anyFieldSet = _videoPath != null || _posterPath != null || _srtPath != null;
 
@@ -329,9 +336,14 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
 
                 // Output directory
                 OutDirRow(
-                  dir: settings.outputDirectory,
+                  dir: displayOutDir,
                   accentColor: accent,
                   onPick: _pickOutputDir,
+                  onClear: customDir.isEmpty
+                      ? null
+                      : () => ref
+                          .read(settingsProvider.notifier)
+                          .setOutputDirectory(''),
                 ).animate().fadeIn(duration: 300.ms, delay: 180.ms),
 
                 const SizedBox(height: 28),

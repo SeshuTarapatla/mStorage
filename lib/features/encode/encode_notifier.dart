@@ -113,6 +113,7 @@ class EncodeNotifier extends Notifier<EncodeState> {
       }
 
       // Step 3 — combine mask + archive into output file
+      await Directory(config.outputDirectory).create(recursive: true);
       state = state.copyWith(step: EncodeStep.combining, combineProgress: 0.0);
 
       int maskLen = 0, archiveLen = 0;

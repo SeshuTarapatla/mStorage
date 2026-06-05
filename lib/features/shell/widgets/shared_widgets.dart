@@ -114,16 +114,20 @@ class OutDirRow extends StatelessWidget {
   final String dir;
   final Color accentColor;
   final VoidCallback onPick;
+  final VoidCallback? onClear;
 
   const OutDirRow({
     super.key,
     required this.dir,
     required this.accentColor,
     required this.onPick,
+    this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isCustom = onClear != null;  // user-picked dir, not auto-computed
+    final hasContent = dir.isNotEmpty;
     return Row(
       children: [
         Expanded(
@@ -133,22 +137,36 @@ class OutDirRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: kSurface2Color,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: kBorderColor),
+              border: Border.all(
+                color: isCustom
+                    ? accentColor.withValues(alpha: 0.45)
+                    : kBorderColor,
+              ),
             ),
             child: Row(
               children: [
-                Icon(Icons.folder_outlined, color: kTextMuted, size: 18),
+                Icon(Icons.folder_outlined,
+                    color: isCustom ? accentColor : kTextMuted, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    dir.isEmpty ? 'Output — same folder as video' : dir,
+                    hasContent ? dir : 'Default: <video folder>/output/',
                     style: TextStyle(
                       fontSize: 13,
-                      color: dir.isEmpty ? kTextMuted : kTextPrimary,
+                      color: hasContent ? kTextPrimary : kTextMuted,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (isCustom)
+                  GestureDetector(
+                    onTap: onClear,
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.close_rounded,
+                          size: 15, color: kTextMuted),
+                    ),
+                  ),
               ],
             ),
           ),
