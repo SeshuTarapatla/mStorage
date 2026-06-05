@@ -1,0 +1,59 @@
+name: m_storage
+description: "mStorage — hide movies inside mask MP4 containers."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # File picking & drag-drop
+  file_picker: ^8.1.4
+  desktop_drop: ^0.4.4
+
+  # Video playback (Windows-native via libmpv)
+  media_kit: ^1.1.11
+  media_kit_video: ^1.2.5
+  media_kit_libs_windows_video: ^1.0.9
+
+  # Custom window chrome
+  window_manager: ^0.4.3
+
+  # Animations
+  flutter_animate: ^4.5.0
+
+  # Typography
+  google_fonts: ^6.2.1
+
+  # Path utilities
+  path: ^1.9.0
+
+  # App directories (cache, temp)
+  path_provider: ^2.1.5
+
+  # ZIP creation/extraction (pure Dart)
+  archive: ^3.6.1
+
+  # Settings persistence (password, preferences)
+  shared_preferences: ^2.3.4
+
+  # Icons
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/bin/
+    - assets/icons/
