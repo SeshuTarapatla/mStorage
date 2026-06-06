@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,6 +9,7 @@ import '../../core/models/decode_config.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../encode/widgets/drop_zone.dart';
 import '../shell/widgets/shared_widgets.dart';
 import 'decode_notifier.dart';
 import 'widgets/extracted_files_list.dart';
@@ -23,29 +25,31 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
   final _palette = AppTab.decode.palette;
   String? _videoPath;
 
+  void _onVideoDropped(String path) => setState(() => _videoPath = path);
+
+  void _clearAll() => setState(() => _videoPath = null);
+
   Future<void> _pickVideo() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['mp4'],
     );
-    if (result != null) {
-      setState(() => _videoPath = result.files.first.path);
-    }
+    if (result != null) _onVideoDropped(result.files.first.path!);
   }
 
   Future<void> _pickOutputDir() async {
     final dir = await FilePicker.platform.getDirectoryPath();
     if (dir != null) {
-      ref.read(settingsProvider.notifier).setOutputDirectory(dir);
+      ref.read(settingsProvider.notifier).setDecodeOutputDirectory(dir);
     }
   }
 
   Future<void> _runDecode() async {
     if (_videoPath == null) return;
     final settings = ref.read(settingsProvider);
-    final outDir = settings.outputDirectory.isEmpty
+    final outDir = settings.decodeOutputDirectory.isEmpty
         ? p.dirname(_videoPath!)
-        : settings.outputDirectory;
+        : settings.decodeOutputDirectory;
 
     await ref.read(decodeProvider.notifier).run(
           DecodeConfig(
@@ -59,107 +63,95 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(decodeProvider);
+    final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
 
-    return SingleChildScrollView(
+    final customDir = settings.decodeOutputDirectory;
+    final displayOutDir = customDir.isNotEmpty
+        ? customDir
+        : (_videoPath != null ? p.dirname(_videoPath!) : '');
+
+    return DropTarget(
+      onDragDone: (details) {
+        final path = details.files.first.path;
+        final ext = path.split('.').last.toLowerCase();
+        if (ext == 'mp4') _onVideoDropped(path);
+      },
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SectionHeader(
-              icon: Icons.download_rounded,
-              title: 'Decode',
-              subtitle: 'Extract the hidden movie from a mask MP4',
-              color: accent,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: SectionHeader(
+                    icon: Icons.download_rounded,
+                    title: 'Decode',
+                    subtitle: 'Extract the hidden movie from a mask MP4',
+                    color: accent,
+                  ),
+                ),
+                if (_videoPath != null && state.step == DecodeStep.idle)
+                  TextButton.icon(
+                    onPressed: _clearAll,
+                    icon: const Icon(Icons.clear_all_rounded, size: 16),
+                    label: const Text('Clear all'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: kTextMuted,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ).animate().fadeIn(duration: 200.ms),
+              ],
             ),
             const SizedBox(height: 24),
 
-            // Drop zone
-            _DecodeDropZone(
-              videoPath: _videoPath,
+            FileDropZone(
+              label: 'Drop encoded MP4 here',
+              hint: 'The mask file that hides a movie inside',
               accentColor: accent,
-              onFilePicked: (path) => setState(() => _videoPath = path),
+              currentPath: _videoPath,
+              allowedExtensions: const ['mp4'],
+              onFilePicked: _onVideoDropped,
               onTap: _pickVideo,
+              onClear: () => setState(() => _videoPath = null),
             ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05),
 
             const SizedBox(height: 16),
 
-            // Output directory
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 13),
-                    decoration: BoxDecoration(
-                      color: kSurface2Color,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: kBorderColor),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.folder_outlined,
-                            color: kTextMuted, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            ref
-                                    .watch(settingsProvider)
-                                    .outputDirectory
-                                    .isEmpty
-                                ? 'Output — same folder as video'
-                                : ref
-                                    .watch(settingsProvider)
-                                    .outputDirectory,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: ref
-                                      .watch(settingsProvider)
-                                      .outputDirectory
-                                      .isEmpty
-                                  ? kTextMuted
-                                  : kTextPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SmallButton(
-                  label: 'Browse',
-                  icon: Icons.folder_open_rounded,
-                  color: accent,
-                  onTap: _pickOutputDir,
-                ),
-              ],
+            OutDirRow(
+              dir: displayOutDir,
+              accentColor: accent,
+              onPick: _pickOutputDir,
+              placeholder: 'Default: same folder as video',
+              onClear: customDir.isEmpty
+                  ? null
+                  : () => ref
+                      .read(settingsProvider.notifier)
+                      .setDecodeOutputDirectory(''),
             ).animate().fadeIn(duration: 300.ms, delay: 80.ms),
 
             const SizedBox(height: 28),
 
-            // Progress
             if (state.isRunning)
               _DecodeProgress(step: state.step, accentColor: accent)
                   .animate()
                   .fadeIn(),
 
-            // Error
             if (state.step == DecodeStep.error)
               ErrorBanner(message: state.errorMessage ?? 'Unknown error')
                   .animate()
                   .fadeIn()
                   .shakeX(),
 
-            // Done
             if (state.step == DecodeStep.done) ...[
               _DecodeDoneBanner(
                 outputDir: state.outputDirectory ?? '',
                 accentColor: accent,
                 onReset: () {
                   ref.read(decodeProvider.notifier).reset();
-                  setState(() => _videoPath = null);
+                  _clearAll();
                 },
               ).animate().fadeIn().scaleXY(begin: 0.95),
               const SizedBox(height: 16),
@@ -169,7 +161,6 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               ).animate().fadeIn(delay: 200.ms),
             ],
 
-            // Decode button
             if (!state.isRunning && state.step != DecodeStep.done)
               _DecodeButton(
                 enabled: _videoPath != null,
@@ -178,88 +169,8 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               ).animate().fadeIn(duration: 300.ms, delay: 140.ms),
           ],
         ),
-    );
-  }
-}
-
-class _DecodeDropZone extends StatefulWidget {
-  final String? videoPath;
-  final Color accentColor;
-  final ValueChanged<String> onFilePicked;
-  final VoidCallback onTap;
-
-  const _DecodeDropZone({
-    required this.videoPath,
-    required this.accentColor,
-    required this.onFilePicked,
-    required this.onTap,
-  });
-
-  @override
-  State<_DecodeDropZone> createState() => _DecodeDropZoneState();
-}
-
-class _DecodeDropZoneState extends State<_DecodeDropZone> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasFile = widget.videoPath != null;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-        decoration: BoxDecoration(
-          color: _isHovered || hasFile
-              ? widget.accentColor.withValues(alpha: 0.06)
-              : kSurface2Color,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _isHovered
-                ? widget.accentColor.withValues(alpha: 0.6)
-                : hasFile
-                    ? widget.accentColor.withValues(alpha: 0.5)
-                    : kBorderColor,
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              hasFile
-                  ? Icons.video_file_rounded
-                  : Icons.file_open_rounded,
-              color: hasFile ? widget.accentColor : kTextMuted,
-              size: 48,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              hasFile
-                  ? widget.videoPath!.split(r'\').last.split('/').last
-                  : 'Drop encoded MP4 here',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: hasFile ? widget.accentColor : kTextPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              hasFile ? 'Click to change file' : 'or click to browse',
-              style: const TextStyle(fontSize: 12, color: kTextMuted),
-            ),
-          ],
-        ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -272,59 +183,108 @@ class _DecodeProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final steps = [
-      (DecodeStep.extractingArchive, 'Splitting archive'),
-      (DecodeStep.extractingFiles, 'Unpacking files'),
+      (DecodeStep.extractingArchive, Icons.call_split_rounded, 'Splitting'),
+      (DecodeStep.extractingFiles, Icons.folder_zip_rounded, 'Unpacking'),
     ];
-    return Column(
-      children: steps.map((s) {
-        final isActive = step == s.$1;
-        final isDone = step.index > s.$1.index;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDone || isActive
-                      ? accentColor.withValues(alpha: 0.15)
-                      : kSurface2Color,
-                  border: Border.all(
-                    color: isDone || isActive ? accentColor : kBorderColor,
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int i = 0; i < steps.length; i++) ...[
+            _DecodeStepDot(
+              icon: steps[i].$2,
+              label: steps[i].$3,
+              isActive: step == steps[i].$1,
+              isDone: step.index > steps[i].$1.index,
+              accentColor: accentColor,
+            ),
+            if (i < steps.length - 1)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 19),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 400),
+                    height: 2,
+                    color: step.index > steps[i].$1.index
+                        ? accentColor
+                        : kBorderColor,
                   ),
                 ),
-                child: Center(
-                  child: isDone
-                      ? Icon(Icons.check_rounded,
-                          color: accentColor, size: 14)
-                      : isActive
-                          ? SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: accentColor,
-                              ),
-                            )
-                          : null,
-                ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                s.$2,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDone || isActive ? kTextPrimary : kTextMuted,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DecodeStepDot extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final bool isDone;
+  final Color accentColor;
+
+  const _DecodeStepDot({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.isDone,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isDone || isActive ? accentColor : kTextMuted;
+
+    final Widget innerChild;
+    if (isDone) {
+      innerChild = Icon(Icons.check_rounded, color: accentColor, size: 18);
+    } else if (isActive) {
+      innerChild = SizedBox(
+        width: 22,
+        height: 22,
+        child: CircularProgressIndicator(strokeWidth: 2.5, color: accentColor),
+      );
+    } else {
+      innerChild = Icon(icon, color: kTextMuted, size: 18);
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isDone || isActive
+                ? accentColor.withValues(alpha: 0.15)
+                : kSurface2Color,
+            border: Border.all(color: color, width: isActive ? 2 : 1),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                        color: accentColor.withValues(alpha: 0.4),
+                        blurRadius: 12)
+                  ]
+                : [],
           ),
-        );
-      }).toList(),
+          child: Center(child: innerChild),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: color,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -373,7 +333,11 @@ class _DecodeDoneBanner extends StatelessWidget {
             onPressed: () => Process.run('explorer', [outputDir]),
             tooltip: 'Open in Explorer',
           ),
-          TextButton(onPressed: onReset, child: const Text('New')),
+          TextButton(
+            onPressed: onReset,
+            style: TextButton.styleFrom(foregroundColor: accentColor),
+            child: const Text('New'),
+          ),
         ],
       ),
     );
@@ -441,6 +405,7 @@ class _DecodeButtonState extends State<_DecodeButton> {
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: widget.enabled ? Colors.white : kTextMuted,
+                  letterSpacing: 0.3,
                 ),
               ),
             ],

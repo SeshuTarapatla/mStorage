@@ -32,13 +32,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _pickOutputDir() async {
-    final dir = await FilePicker.platform.getDirectoryPath();
-    if (dir != null) {
-      ref.read(settingsProvider.notifier).setOutputDirectory(dir);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
@@ -116,50 +109,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               label: 'Output',
               accent: accent,
               children: [
-                _SettingRow(
-                  icon: Icons.folder_outlined,
-                  title: 'Default Output Directory',
-                  subtitle:
-                      'Where encoded/decoded files are saved. Defaults to the same folder as the source.',
+                _DirSettingRow(
+                  icon: Icons.upload_rounded,
+                  title: 'Encode Output Directory',
+                  subtitle: 'Defaults to <video folder>/output/',
                   accent: accent,
-                  control: SmallButton(
-                    label: settings.outputDirectory.isEmpty
-                        ? 'Set folder'
-                        : 'Change',
-                    icon: Icons.folder_open_rounded,
-                    color: accent,
-                    onTap: _pickOutputDir,
-                  ),
+                  dir: settings.encodeOutputDirectory,
+                  onPick: () async {
+                    final dir =
+                        await FilePicker.platform.getDirectoryPath();
+                    if (dir != null) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setEncodeOutputDirectory(dir);
+                    }
+                  },
+                  onClear: () => ref
+                      .read(settingsProvider.notifier)
+                      .setEncodeOutputDirectory(''),
                 ),
-                if (settings.outputDirectory.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Row(
-                      children: [
-                        Icon(Icons.subdirectory_arrow_right_rounded,
-                            size: 14, color: kTextMuted),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            settings.outputDirectory,
-                            style: const TextStyle(
-                                fontSize: 12, color: kTextSecondary),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.clear_rounded,
-                              size: 14, color: kTextMuted),
-                          onPressed: () => ref
-                              .read(settingsProvider.notifier)
-                              .setOutputDirectory(''),
-                          tooltip: 'Clear',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                  ),
+                _DirSettingRow(
+                  icon: Icons.download_rounded,
+                  title: 'Decode Output Directory',
+                  subtitle: 'Defaults to same folder as video',
+                  accent: accent,
+                  dir: settings.decodeOutputDirectory,
+                  onPick: () async {
+                    final dir =
+                        await FilePicker.platform.getDirectoryPath();
+                    if (dir != null) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setDecodeOutputDirectory(dir);
+                    }
+                  },
+                  onClear: () => ref
+                      .read(settingsProvider.notifier)
+                      .setDecodeOutputDirectory(''),
+                ),
               ],
             ).animate().fadeIn(duration: 300.ms, delay: 120.ms),
 
@@ -359,6 +346,74 @@ class _ChipButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DirSettingRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final String dir;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  const _DirSettingRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.dir,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SettingRow(
+          icon: icon,
+          title: title,
+          subtitle: subtitle,
+          accent: accent,
+          control: SmallButton(
+            label: dir.isEmpty ? 'Set folder' : 'Change',
+            icon: Icons.folder_open_rounded,
+            color: accent,
+            onTap: onPick,
+          ),
+        ),
+        if (dir.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Icon(Icons.subdirectory_arrow_right_rounded,
+                    size: 14, color: kTextMuted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    dir,
+                    style: const TextStyle(
+                        fontSize: 12, color: kTextSecondary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.clear_rounded,
+                      size: 14, color: kTextMuted),
+                  onPressed: onClear,
+                  tooltip: 'Clear',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

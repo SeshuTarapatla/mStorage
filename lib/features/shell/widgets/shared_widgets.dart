@@ -115,6 +115,7 @@ class OutDirRow extends StatelessWidget {
   final Color accentColor;
   final VoidCallback onPick;
   final VoidCallback? onClear;
+  final String placeholder;
 
   const OutDirRow({
     super.key,
@@ -122,6 +123,7 @@ class OutDirRow extends StatelessWidget {
     required this.accentColor,
     required this.onPick,
     this.onClear,
+    this.placeholder = 'Default: <video folder>/output/',
   });
 
   @override
@@ -150,7 +152,7 @@ class OutDirRow extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    hasContent ? dir : 'Default: <video folder>/output/',
+                    hasContent ? dir : placeholder,
                     style: TextStyle(
                       fontSize: 13,
                       color: hasContent ? kTextPrimary : kTextMuted,

@@ -27,6 +27,7 @@ class ProgressPipeline extends StatelessWidget {
     ];
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (int i = 0; i < steps.length; i++) ...[
           _StepDot(
@@ -38,12 +39,15 @@ class ProgressPipeline extends StatelessWidget {
           ),
           if (i < steps.length - 1)
             Expanded(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                height: 2,
-                color: _stepState(steps[i].$1) == _StepState.done
-                    ? accentColor
-                    : kBorderColor,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 19),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  height: 2,
+                  color: _stepState(steps[i].$1) == _StepState.done
+                      ? accentColor
+                      : kBorderColor,
+                ),
               ),
             ),
         ],

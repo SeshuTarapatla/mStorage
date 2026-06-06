@@ -158,7 +158,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
   Future<void> _pickOutputDir() async {
     final dir = await FilePicker.platform.getDirectoryPath();
     if (dir != null) {
-      ref.read(settingsProvider.notifier).setOutputDirectory(dir);
+      ref.read(settingsProvider.notifier).setEncodeOutputDirectory(dir);
     }
   }
 
@@ -177,9 +177,9 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
     final title = _titleCtrl.text.trim().isEmpty
         ? p.basenameWithoutExtension(_videoPath!)
         : _titleCtrl.text.trim();
-    final outDir = settings.outputDirectory.isEmpty
+    final outDir = settings.encodeOutputDirectory.isEmpty
         ? p.join(p.dirname(_videoPath!), 'output')
-        : settings.outputDirectory;
+        : settings.encodeOutputDirectory;
 
     await ref.read(encodeProvider.notifier).run(
           EncodeConfig(
@@ -201,7 +201,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
     final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
 
-    final customDir = settings.outputDirectory;
+    final customDir = settings.encodeOutputDirectory;
     final displayOutDir = customDir.isNotEmpty
         ? customDir
         : (_videoPath != null
@@ -343,7 +343,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                       ? null
                       : () => ref
                           .read(settingsProvider.notifier)
-                          .setOutputDirectory(''),
+                          .setEncodeOutputDirectory(''),
                 ).animate().fadeIn(duration: 300.ms, delay: 180.ms),
 
                 const SizedBox(height: 28),

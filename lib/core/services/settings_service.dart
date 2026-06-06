@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/settings_model.dart';
 
 const _kPassword = 'setting_password';
-const _kOutputDir = 'setting_output_dir';
+const _kEncodeOutputDir = 'setting_encode_output_dir';
+const _kDecodeOutputDir = 'setting_decode_output_dir';
 const _kAspectRatio = 'setting_aspect_ratio';
 const _kMaskDuration = 'setting_mask_duration';
 
@@ -17,7 +18,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     _prefs = await SharedPreferences.getInstance();
     state = AppSettings(
       password: _prefs.getString(_kPassword) ?? '',
-      outputDirectory: _prefs.getString(_kOutputDir) ?? '',
+      encodeOutputDirectory: _prefs.getString(_kEncodeOutputDir) ?? '',
+      decodeOutputDirectory: _prefs.getString(_kDecodeOutputDir) ?? '',
       preserveAspectRatio: _prefs.getBool(_kAspectRatio) ?? true,
       maskDurationSeconds: _prefs.getInt(_kMaskDuration) ?? 5,
     );
@@ -28,9 +30,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await _prefs.setString(_kPassword, value);
   }
 
-  Future<void> setOutputDirectory(String value) async {
-    state = state.copyWith(outputDirectory: value);
-    await _prefs.setString(_kOutputDir, value);
+  Future<void> setEncodeOutputDirectory(String value) async {
+    state = state.copyWith(encodeOutputDirectory: value);
+    await _prefs.setString(_kEncodeOutputDir, value);
+  }
+
+  Future<void> setDecodeOutputDirectory(String value) async {
+    state = state.copyWith(decodeOutputDirectory: value);
+    await _prefs.setString(_kDecodeOutputDir, value);
   }
 
   Future<void> setPreserveAspectRatio(bool value) async {

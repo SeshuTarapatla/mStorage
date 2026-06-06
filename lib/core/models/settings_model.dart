@@ -1,25 +1,31 @@
 class AppSettings {
   final String password;
-  final String outputDirectory;
+  final String encodeOutputDirectory;
+  final String decodeOutputDirectory;
   final bool preserveAspectRatio;
   final int maskDurationSeconds;
 
   const AppSettings({
     this.password = '',
-    this.outputDirectory = '',
+    this.encodeOutputDirectory = '',
+    this.decodeOutputDirectory = '',
     this.preserveAspectRatio = true,
     this.maskDurationSeconds = 5,
   });
 
   AppSettings copyWith({
     String? password,
-    String? outputDirectory,
+    String? encodeOutputDirectory,
+    String? decodeOutputDirectory,
     bool? preserveAspectRatio,
     int? maskDurationSeconds,
   }) {
     return AppSettings(
       password: password ?? this.password,
-      outputDirectory: outputDirectory ?? this.outputDirectory,
+      encodeOutputDirectory:
+          encodeOutputDirectory ?? this.encodeOutputDirectory,
+      decodeOutputDirectory:
+          decodeOutputDirectory ?? this.decodeOutputDirectory,
       preserveAspectRatio: preserveAspectRatio ?? this.preserveAspectRatio,
       maskDurationSeconds: maskDurationSeconds ?? this.maskDurationSeconds,
     );
