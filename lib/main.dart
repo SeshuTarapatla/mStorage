@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:local_notifier/local_notifier.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/services/settings_service.dart';
@@ -10,8 +9,6 @@ import 'features/shell/app_shell.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  await localNotifier.setup(appName: 'mStorage');
-
   // Load settings before building UI so activeTabProvider can read startupTab.
   final container = ProviderContainer();
   await container.read(settingsProvider.notifier).load();
