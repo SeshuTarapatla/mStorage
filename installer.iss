@@ -28,7 +28,7 @@ DefaultGroupName={#AppName}
 AllowNoIcons=yes
 ; Output
 OutputDir=installer
-OutputBaseFilename=mStorage_Setup
+OutputBaseFilename=mStorage_Setup_v{#AppVersion}
 ; Icon
 SetupIconFile=windows\runner\resources\app_icon.ico
 ; Compression
