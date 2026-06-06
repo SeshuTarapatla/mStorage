@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -48,7 +49,8 @@ class AppShell extends ConsumerWidget {
             backgroundColor: kBgColor,
             body: Column(
               children: [
-                _TitleBar(activeTab: activeTab, palette: palette),
+                if (Platform.isWindows)
+                  _TitleBar(activeTab: activeTab, palette: palette),
                 Expanded(
                   child: Row(
                     children: [

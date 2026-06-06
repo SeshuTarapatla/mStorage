@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -85,7 +84,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
       return const {'mp4', 'mkv', 'avi', 'mov', 'webm'}.contains(ext);
     }).firstOrNull;
 
-    return DropTarget(
+    return PlatformDropTarget(
       onDragDone: (details) {
         final path = details.files.first.path;
         final ext = path.split('.').last.toLowerCase();

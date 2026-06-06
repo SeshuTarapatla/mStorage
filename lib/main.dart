@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -10,24 +11,27 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   // Load settings before building UI so activeTabProvider can read startupTab.
+  // ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
   final container = ProviderContainer();
   await container.read(settingsProvider.notifier).load();
 
-  await windowManager.ensureInitialized();
-  await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      size: Size(1100, 740),
-      minimumSize: Size(860, 600),
-      center: true,
-      title: 'mStorage',
-      titleBarStyle: TitleBarStyle.hidden,
-      backgroundColor: Colors.transparent,
-    ),
-    () async {
-      await windowManager.show();
-      await windowManager.focus();
-    },
-  );
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    await windowManager.waitUntilReadyToShow(
+      const WindowOptions(
+        size: Size(1100, 740),
+        minimumSize: Size(860, 600),
+        center: true,
+        title: 'mStorage',
+        titleBarStyle: TitleBarStyle.hidden,
+        backgroundColor: Colors.transparent,
+      ),
+      () async {
+        await windowManager.show();
+        await windowManager.focus();
+      },
+    );
+  }
 
   runApp(UncontrolledProviderScope(container: container, child: const MStorageApp()));
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import '../../shell/widgets/shared_widgets.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -68,7 +68,7 @@ class _FileDropZoneState extends State<FileDropZone> {
 
     return Stack(
       children: [
-        DropTarget(
+        PlatformDropTarget(
           onDragEntered: (_) => setState(() => _isDragging = true),
           onDragExited: (_) => setState(() => _isDragging = false),
           onDragDone: (details) {

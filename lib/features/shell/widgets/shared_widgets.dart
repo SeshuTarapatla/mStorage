@@ -1,5 +1,35 @@
+import 'dart:io' show Platform;
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
+
+/// Wraps [child] in a [DropTarget] on Windows; on other platforms returns
+/// [child] directly since drag-and-drop from the OS is desktop-only.
+class PlatformDropTarget extends StatelessWidget {
+  final Widget child;
+  final void Function(DropDoneDetails) onDragDone;
+  final void Function(DropEventDetails)? onDragEntered;
+  final void Function(DropEventDetails)? onDragExited;
+
+  const PlatformDropTarget({
+    super.key,
+    required this.child,
+    required this.onDragDone,
+    this.onDragEntered,
+    this.onDragExited,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Platform.isWindows) return child;
+    return DropTarget(
+      onDragDone: onDragDone,
+      onDragEntered: onDragEntered,
+      onDragExited: onDragExited,
+      child: child,
+    );
+  }
+}
 
 class SectionHeader extends StatelessWidget {
   final IconData icon;

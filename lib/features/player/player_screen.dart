@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -101,6 +100,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _checkSyncplay() {
+    if (!Platform.isWindows) return;
     final appDir = p.dirname(Platform.resolvedExecutable);
     final paths = [
       // Portable bundle next to the app executable
@@ -139,7 +139,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _stopSyncplay() {
-    if (_syncplayProcess != null) {
+    if (Platform.isWindows && _syncplayProcess != null) {
       // /T kills the process tree (Syncplay + VLC child) on Windows
       Process.run('taskkill', ['/F', '/T', '/PID', '${_syncplayProcess!.pid}']);
     }
@@ -209,7 +209,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
-    return DropTarget(
+    return PlatformDropTarget(
       onDragDone: (details) {
         final path = details.files.first.path;
         if (_isVideoFile(path)) _openVideo(path);
@@ -355,7 +355,7 @@ class _VideoAreaState extends State<_VideoArea> {
 
   @override
   Widget build(BuildContext context) {
-    return DropTarget(
+    return PlatformDropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) {
@@ -447,7 +447,7 @@ class _PlayerPlaceholderState extends State<_PlayerPlaceholder> {
 
   @override
   Widget build(BuildContext context) {
-    return DropTarget(
+    return PlatformDropTarget(
       onDragEntered: (_) => setState(() => _isDragging = true),
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) {

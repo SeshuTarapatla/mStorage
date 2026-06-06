@@ -17,10 +17,10 @@ dependencies:
   file_picker: ^8.1.4
   desktop_drop: ^0.4.4
 
-  # Video playback (Windows-native via libmpv)
+  # Video playback (libmpv — cross-platform libs cover Windows + Android)
   media_kit: ^1.1.11
   media_kit_video: ^1.2.5
-  media_kit_libs_windows_video: ^1.0.9
+  media_kit_libs_video: ^1.0.7
 
   # Custom window chrome
   window_manager: ^0.4.3

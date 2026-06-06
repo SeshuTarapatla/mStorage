@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -212,7 +211,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
 
     final anyFieldSet = _videoPath != null || _posterPath != null || _srtPath != null;
 
-    return DropTarget(
+    return PlatformDropTarget(
       onDragDone: (details) =>
           _routeFiles(details.files.map((f) => f.path).toList()),
       child: SingleChildScrollView(
