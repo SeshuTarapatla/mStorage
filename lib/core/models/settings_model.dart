@@ -4,6 +4,9 @@ class AppSettings {
   final String decodeOutputDirectory;
   final bool preserveAspectRatio;
   final int maskDurationSeconds;
+  final int syncplayPort;
+  final String syncplayUsername;
+  final String syncplayRoom;
 
   const AppSettings({
     this.password = '',
@@ -11,6 +14,9 @@ class AppSettings {
     this.decodeOutputDirectory = '',
     this.preserveAspectRatio = true,
     this.maskDurationSeconds = 5,
+    this.syncplayPort = 8999,
+    this.syncplayUsername = '',
+    this.syncplayRoom = '',
   });
 
   AppSettings copyWith({
@@ -19,6 +25,9 @@ class AppSettings {
     String? decodeOutputDirectory,
     bool? preserveAspectRatio,
     int? maskDurationSeconds,
+    int? syncplayPort,
+    String? syncplayUsername,
+    String? syncplayRoom,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -28,6 +37,9 @@ class AppSettings {
           decodeOutputDirectory ?? this.decodeOutputDirectory,
       preserveAspectRatio: preserveAspectRatio ?? this.preserveAspectRatio,
       maskDurationSeconds: maskDurationSeconds ?? this.maskDurationSeconds,
+      syncplayPort: syncplayPort ?? this.syncplayPort,
+      syncplayUsername: syncplayUsername ?? this.syncplayUsername,
+      syncplayRoom: syncplayRoom ?? this.syncplayRoom,
     );
   }
 }
