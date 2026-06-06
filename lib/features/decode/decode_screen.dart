@@ -6,10 +6,12 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../core/models/decode_config.dart';
+import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
 import '../encode/widgets/drop_zone.dart';
+import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 import 'decode_notifier.dart';
 import 'widgets/extracted_files_list.dart';
@@ -28,6 +30,11 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
   void _onVideoDropped(String path) => setState(() => _videoPath = path);
 
   void _clearAll() => setState(() => _videoPath = null);
+
+  void _openInPlayer(String path) {
+    ref.read(playerOpenRequestProvider.notifier).state = path;
+    ref.read(activeTabProvider.notifier).state = AppTab.player;
+  }
 
   Future<void> _pickVideo() async {
     final result = await FilePicker.platform.pickFiles(
@@ -61,6 +68,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     final state = ref.watch(decodeProvider);
     final settings = ref.watch(settingsProvider);
@@ -70,6 +78,12 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     final displayOutDir = customDir.isNotEmpty
         ? customDir
         : (_videoPath != null ? p.dirname(_videoPath!) : '');
+
+    // First video in extracted files, for "Open in Player" shortcut
+    final firstVideo = state.extractedFiles.where((f) {
+      final ext = p.extension(f).replaceFirst('.', '').toLowerCase();
+      return const {'mp4', 'mkv', 'avi', 'mov', 'webm'}.contains(ext);
+    }).firstOrNull;
 
     return DropTarget(
       onDragDone: (details) {
@@ -93,6 +107,16 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
                     color: accent,
                   ),
                 ),
+                if (state.isRunning)
+                  TextButton.icon(
+                    onPressed: () => ref.read(decodeProvider.notifier).cancel(),
+                    icon: const Icon(Icons.cancel_rounded, size: 16),
+                    label: const Text('Cancel'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: kTextMuted,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ).animate().fadeIn(duration: 200.ms),
                 if (_videoPath != null && state.step == DecodeStep.idle)
                   TextButton.icon(
                     onPressed: _clearAll,
@@ -149,6 +173,8 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               _DecodeDoneBanner(
                 outputDir: state.outputDirectory ?? '',
                 accentColor: accent,
+                firstVideoPath: firstVideo,
+                onOpenInPlayer: firstVideo != null ? _openInPlayer : null,
                 onReset: () {
                   ref.read(decodeProvider.notifier).reset();
                   _clearAll();
@@ -158,6 +184,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               ExtractedFilesList(
                 files: state.extractedFiles,
                 accentColor: accent,
+                onOpenInPlayer: _openInPlayer,
               ).animate().fadeIn(delay: 200.ms),
             ],
 
@@ -293,11 +320,15 @@ class _DecodeDoneBanner extends StatelessWidget {
   final String outputDir;
   final Color accentColor;
   final VoidCallback onReset;
+  final String? firstVideoPath;
+  final ValueChanged<String>? onOpenInPlayer;
 
   const _DecodeDoneBanner({
     required this.outputDir,
     required this.accentColor,
     required this.onReset,
+    this.firstVideoPath,
+    this.onOpenInPlayer,
   });
 
   @override
@@ -333,6 +364,13 @@ class _DecodeDoneBanner extends StatelessWidget {
             onPressed: () => Process.run('explorer', [outputDir]),
             tooltip: 'Open in Explorer',
           ),
+          if (onOpenInPlayer != null)
+            TextButton.icon(
+              onPressed: () => onOpenInPlayer!(firstVideoPath!),
+              icon: Icon(Icons.play_circle_rounded, size: 16, color: accentColor),
+              label: const Text('Play'),
+              style: TextButton.styleFrom(foregroundColor: accentColor),
+            ),
           TextButton(
             onPressed: onReset,
             style: TextButton.styleFrom(foregroundColor: accentColor),

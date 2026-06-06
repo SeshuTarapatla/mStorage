@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -13,6 +14,7 @@ class FileDropZone extends StatefulWidget {
   final VoidCallback? onTap;
   final void Function(List<String>)? onMultiFileDrop;
   final VoidCallback? onClear;
+  final bool showImagePreview;
 
   const FileDropZone({
     super.key,
@@ -25,6 +27,7 @@ class FileDropZone extends StatefulWidget {
     this.onTap,
     this.onMultiFileDrop,
     this.onClear,
+    this.showImagePreview = false,
   });
 
   @override
@@ -37,9 +40,31 @@ class _FileDropZoneState extends State<FileDropZone> {
 
   bool get _isActive => _isDragging || _isHovered;
 
+  static bool _isImage(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    return ['jpg', 'jpeg', 'png', 'webp', 'bmp'].contains(ext);
+  }
+
+  static String _sizeLabel(String path) {
+    try {
+      final bytes = File(path).lengthSync();
+      if (bytes < 1024 * 1024) {
+        return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      } else if (bytes < 1024 * 1024 * 1024) {
+        return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      }
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasFile = widget.currentPath != null && widget.currentPath!.isNotEmpty;
+    final showPreview =
+        hasFile && widget.showImagePreview && _isImage(widget.currentPath!);
+    final sizeLabel = hasFile ? _sizeLabel(widget.currentPath!) : '';
 
     return Stack(
       children: [
@@ -70,7 +95,7 @@ class _FileDropZoneState extends State<FileDropZone> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
                 decoration: BoxDecoration(
                   color: _isActive
                       ? widget.accentColor.withValues(alpha: 0.08)
@@ -92,21 +117,34 @@ class _FileDropZoneState extends State<FileDropZone> {
                   children: [
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 250),
-                      child: hasFile
-                          ? Icon(Icons.check_circle_rounded,
-                              key: const ValueKey('check'),
-                              color: widget.accentColor,
-                              size: 36)
-                          : Icon(
-                              _isDragging
-                                  ? Icons.file_download_rounded
-                                  : Icons.upload_file_rounded,
-                              key: ValueKey(_isDragging),
-                              color: _isActive ? widget.accentColor : kTextMuted,
-                              size: 36,
-                            ),
+                      child: showPreview
+                          ? ClipRRect(
+                              key: const ValueKey('preview'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                File(widget.currentPath!),
+                                height: 90,
+                                width: 140,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : hasFile
+                              ? Icon(Icons.check_circle_rounded,
+                                  key: const ValueKey('check'),
+                                  color: widget.accentColor,
+                                  size: 36)
+                              : Icon(
+                                  _isDragging
+                                      ? Icons.file_download_rounded
+                                      : Icons.upload_file_rounded,
+                                  key: ValueKey(_isDragging),
+                                  color: _isActive
+                                      ? widget.accentColor
+                                      : kTextMuted,
+                                  size: 36,
+                                ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Text(
                       hasFile
                           ? widget.currentPath!.split(r'\').last.split('/').last
@@ -124,11 +162,18 @@ class _FileDropZoneState extends State<FileDropZone> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
-                      hasFile ? 'Click to change' : widget.hint,
+                      hasFile
+                          ? (sizeLabel.isNotEmpty ? sizeLabel : 'Click to change')
+                          : widget.hint,
                       style: const TextStyle(fontSize: 12, color: kTextMuted),
                     ),
+                    if (hasFile && sizeLabel.isNotEmpty)
+                      const Text(
+                        'Click to change',
+                        style: TextStyle(fontSize: 11, color: kTextMuted),
+                      ),
                   ],
                 ),
               ),
@@ -138,7 +183,6 @@ class _FileDropZoneState extends State<FileDropZone> {
             .animate(target: _isDragging ? 1 : 0)
             .scaleXY(end: 1.02, duration: 150.ms, curve: Curves.easeOut),
 
-        // Clear button — outside the GestureDetector so it doesn't open the picker
         if (hasFile && widget.onClear != null)
           Positioned(
             top: 8,
@@ -154,7 +198,8 @@ class _FileDropZoneState extends State<FileDropZone> {
                   color: kSurface2Color,
                   border: Border.all(color: kBorderColor),
                 ),
-                child: const Icon(Icons.close_rounded, size: 13, color: kTextMuted),
+                child: const Icon(Icons.close_rounded,
+                    size: 13, color: kTextMuted),
               ),
             ),
           ),

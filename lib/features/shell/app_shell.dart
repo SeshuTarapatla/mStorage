@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../decode/decode_notifier.dart';
+import '../encode/encode_notifier.dart';
 import '../encode/encode_screen.dart';
 import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
@@ -24,52 +28,69 @@ class AppShell extends ConsumerWidget {
     final activeTab = ref.watch(activeTabProvider);
     final palette = activeTab.palette;
 
-    return AnimatedTheme(
-      duration: const Duration(milliseconds: 300),
-      data: Theme.of(context),
-      child: Scaffold(
-        backgroundColor: kBgColor,
-        body: Column(
-          children: [
-            _TitleBar(activeTab: activeTab, palette: palette),
-            Expanded(
-              child: Row(
-                children: [
-                  _Sidebar(activeTab: activeTab, palette: palette),
-                  Expanded(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      color: palette.surface,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 250),
-                        layoutBuilder: (currentChild, previousChildren) => Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            ...previousChildren,
-                            ?currentChild,
-                          ],
-                        ),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position: Tween<Offset>(
-                              begin: const Offset(0.02, 0),
-                              end: Offset.zero,
-                            ).animate(animation),
-                            child: child,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+            ref.read(activeTabProvider.notifier).state = AppTab.encode,
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+            ref.read(activeTabProvider.notifier).state = AppTab.decode,
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+            ref.read(activeTabProvider.notifier).state = AppTab.player,
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
+            ref.read(activeTabProvider.notifier).state = AppTab.settings,
+      },
+      child: Focus(
+        autofocus: true,
+        child: AnimatedTheme(
+          duration: const Duration(milliseconds: 300),
+          data: Theme.of(context),
+          child: Scaffold(
+            backgroundColor: kBgColor,
+            body: Column(
+              children: [
+                _TitleBar(activeTab: activeTab, palette: palette),
+                Expanded(
+                  child: Row(
+                    children: [
+                      _Sidebar(activeTab: activeTab, palette: palette),
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          color: palette.surface,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            layoutBuilder: (currentChild, previousChildren) =>
+                                Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ...previousChildren,
+                                ?currentChild,
+                              ],
+                            ),
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0.02, 0),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            ),
+                            child: KeyedSubtree(
+                              key: ValueKey(activeTab),
+                              child: _screenFor(activeTab),
+                            ),
                           ),
                         ),
-                        child: KeyedSubtree(
-                          key: ValueKey(activeTab),
-                          child: _screenFor(activeTab),
-                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -226,6 +247,9 @@ class _SidebarState extends ConsumerState<_Sidebar> {
 
   @override
   Widget build(BuildContext context) {
+    final encodeRunning = ref.watch(encodeProvider).isRunning;
+    final decodeRunning = ref.watch(decodeProvider).isRunning;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       width: 72,
@@ -243,6 +267,8 @@ class _SidebarState extends ConsumerState<_Sidebar> {
               label: item.$3,
               isActive: widget.activeTab == item.$1,
               isHovered: _hovered == item.$1,
+              isRunning: (item.$1 == AppTab.encode && encodeRunning) ||
+                  (item.$1 == AppTab.decode && decodeRunning),
               palette: item.$1.palette,
               onTap: () =>
                   ref.read(activeTabProvider.notifier).state = item.$1,
@@ -261,6 +287,7 @@ class _SidebarItem extends StatelessWidget {
   final String label;
   final bool isActive;
   final bool isHovered;
+  final bool isRunning;
   final TabPalette palette;
   final VoidCallback onTap;
   final ValueChanged<bool> onHover;
@@ -271,6 +298,7 @@ class _SidebarItem extends StatelessWidget {
     required this.label,
     required this.isActive,
     required this.isHovered,
+    required this.isRunning,
     required this.palette,
     required this.onTap,
     required this.onHover,
@@ -307,16 +335,39 @@ class _SidebarItem extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: isActive
-                      ? [BoxShadow(color: palette.glow, blurRadius: 10)]
-                      : [],
-                ),
-                child: Icon(icon, color: color, size: 22),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: isActive
+                          ? [BoxShadow(color: palette.glow, blurRadius: 10)]
+                          : [],
+                    ),
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                  if (isRunning)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: palette.primary,
+                          boxShadow: [
+                            BoxShadow(color: palette.glow, blurRadius: 4)
+                          ],
+                        ),
+                      )
+                          .animate(onPlay: (c) => c.repeat(reverse: true))
+                          .fade(begin: 0.3, end: 1.0, duration: 600.ms),
+                    ),
+                ],
               ),
               const SizedBox(height: 4),
               Text(

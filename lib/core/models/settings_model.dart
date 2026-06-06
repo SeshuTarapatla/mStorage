@@ -8,6 +8,7 @@ class AppSettings {
   final String syncplayUsername;
   final String syncplayRoom;
   final int startupTab;
+  final String lastVideoPath;
 
   const AppSettings({
     this.password = '',
@@ -19,6 +20,7 @@ class AppSettings {
     this.syncplayUsername = '',
     this.syncplayRoom = '',
     this.startupTab = 0,
+    this.lastVideoPath = '',
   });
 
   AppSettings copyWith({
@@ -31,6 +33,7 @@ class AppSettings {
     String? syncplayUsername,
     String? syncplayRoom,
     int? startupTab,
+    String? lastVideoPath,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -44,6 +47,7 @@ class AppSettings {
       syncplayUsername: syncplayUsername ?? this.syncplayUsername,
       syncplayRoom: syncplayRoom ?? this.syncplayRoom,
       startupTab: startupTab ?? this.startupTab,
+      lastVideoPath: lastVideoPath ?? this.lastVideoPath,
     );
   }
 }

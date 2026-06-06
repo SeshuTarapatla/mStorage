@@ -4,12 +4,13 @@ import 'dart:io';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:local_notifier/local_notifier.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
+import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
@@ -61,10 +62,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _usernameCtrl = TextEditingController(text: settings.syncplayUsername);
     _roomCtrl = TextEditingController(text: settings.syncplayRoom);
     _checkSyncplay();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final path = ref.read(playerOpenRequestProvider);
+      if (path != null) {
+        _openVideo(path);
+        ref.read(playerOpenRequestProvider.notifier).state = null;
+      }
+    });
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     // Stop playback but do NOT dispose the shared player/controller —
     // they are module-level singletons and must survive hot restart.
     _player.stop();
@@ -73,6 +84,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _stdoutSub?.cancel();
     _stderrSub?.cancel();
     super.dispose();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey != LogicalKeyboardKey.space) return false;
+    if (_videoPath == null) return false;
+    // Don't steal space from focused text fields
+    if (FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<TextField>() !=
+        null) {
+      return false;
+    }
+    _player.playOrPause();
+    return true;
   }
 
   void _checkSyncplay() {
@@ -96,12 +121,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _openVideo(String path) async {
     setState(() => _videoPath = path);
+    // Wait one frame so the Video widget is mounted before opening media.
+    // Calling open() before VideoController's first render leaves it in a
+    // broken state where playback silently fails on first app launch.
+    final frameReady = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) => frameReady.complete());
+    await frameReady.future;
+    if (!mounted) return;
     await _player.open(Media(path));
+    if (mounted) _player.play();
+    if (mounted) ref.read(settingsProvider.notifier).setLastVideoPath(path);
   }
 
   void _closeVideo() {
     _player.stop();
     setState(() => _videoPath = null);
+  }
+
+  void _stopSyncplay() {
+    if (_syncplayProcess != null) {
+      // /T kills the process tree (Syncplay + VLC child) on Windows
+      Process.run('taskkill', ['/F', '/T', '/PID', '${_syncplayProcess!.pid}']);
+    }
+    setState(() => _syncplayProcess = null);
   }
 
   Future<void> _pickVideo() async {
@@ -153,24 +195,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void _handleSyncplayLine(String line) {
     if (!mounted) return;
     setState(() => _syncplayLogs.add(line));
-    _checkForJoinEvent(line);
-  }
-
-  void _checkForJoinEvent(String line) {
-    final lower = line.toLowerCase();
-    if (lower.contains(' joined') || lower.contains('has joined')) {
-      final notification = LocalNotification(
-        title: 'Syncplay',
-        body: line.trim(),
-      );
-      notification.show();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = _palette.primary;
     final settings = ref.watch(settingsProvider);
+
+    ref.listen<String?>(playerOpenRequestProvider, (_, path) {
+      if (path != null) {
+        _openVideo(path);
+        ref.read(playerOpenRequestProvider.notifier).state = null;
+      }
+    });
 
     return DropTarget(
       onDragDone: (details) {
@@ -223,6 +260,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       accent: accent,
                       onTap: _pickVideo,
                       onDrop: _openVideo,
+                      lastVideoPath: settings.lastVideoPath.isEmpty
+                          ? null
+                          : settings.lastVideoPath,
+                      onResume: settings.lastVideoPath.isEmpty
+                          ? null
+                          : () => _openVideo(settings.lastVideoPath),
                     ),
             ),
 
@@ -253,6 +296,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                   running: _syncplayProcess != null,
                   accent: accent,
                   onTap: _launchSyncplay,
+                  onStop: _stopSyncplay,
                 ),
               ],
             ).animate().fadeIn(duration: 300.ms, delay: 100.ms),
@@ -379,12 +423,16 @@ class _PlayerPlaceholder extends StatefulWidget {
   final Color accent;
   final VoidCallback onTap;
   final ValueChanged<String> onDrop;
+  final String? lastVideoPath;
+  final VoidCallback? onResume;
 
   const _PlayerPlaceholder({
     super.key,
     required this.accent,
     required this.onTap,
     required this.onDrop,
+    this.lastVideoPath,
+    this.onResume,
   });
 
   @override
@@ -461,6 +509,22 @@ class _PlayerPlaceholderState extends State<_PlayerPlaceholder> {
                     'MP4 · MKV · MOV · AVI · WebM',
                     style: TextStyle(fontSize: 12, color: kTextMuted),
                   ),
+                  if (widget.lastVideoPath != null && !_isDragging) ...[
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: widget.onResume,
+                      icon: Icon(Icons.history_rounded,
+                          size: 14, color: widget.accent),
+                      label: Text(
+                        'Resume: ${p.basename(widget.lastVideoPath!)}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: widget.accent,
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -521,6 +585,7 @@ class _SyncplayButton extends StatefulWidget {
   final bool running;
   final Color accent;
   final VoidCallback onTap;
+  final VoidCallback onStop;
 
   const _SyncplayButton({
     required this.found,
@@ -528,6 +593,7 @@ class _SyncplayButton extends StatefulWidget {
     required this.running,
     required this.accent,
     required this.onTap,
+    required this.onStop,
   });
 
   @override
@@ -543,23 +609,35 @@ class _SyncplayButtonState extends State<_SyncplayButton> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
-        onTap: widget.enabled ? widget.onTap : null,
+        onTap: widget.running
+            ? widget.onStop
+            : widget.enabled
+                ? widget.onTap
+                : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           decoration: BoxDecoration(
-            gradient: widget.enabled
+            gradient: (widget.enabled || widget.running)
                 ? LinearGradient(colors: [
-                    widget.accent,
-                    widget.accent.withValues(alpha: 0.75),
+                    widget.running
+                        ? const Color(0xFFEF4444)
+                        : widget.accent,
+                    (widget.running
+                            ? const Color(0xFFEF4444)
+                            : widget.accent)
+                        .withValues(alpha: 0.75),
                   ])
                 : null,
-            color: widget.enabled ? null : kSurface2Color,
+            color: (widget.enabled || widget.running) ? null : kSurface2Color,
             borderRadius: BorderRadius.circular(10),
-            boxShadow: widget.enabled && _hovered
+            boxShadow: (widget.enabled || widget.running) && _hovered
                 ? [
                     BoxShadow(
-                      color: widget.accent.withValues(alpha: 0.4),
+                      color: (widget.running
+                              ? const Color(0xFFEF4444)
+                              : widget.accent)
+                          .withValues(alpha: 0.4),
                       blurRadius: 16,
                       offset: const Offset(0, 3),
                     )
@@ -570,23 +648,20 @@ class _SyncplayButtonState extends State<_SyncplayButton> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.running)
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white),
-                )
+                const Icon(Icons.stop_rounded, size: 16, color: Colors.white)
               else
                 Icon(Icons.sync_rounded,
                     size: 16,
                     color: widget.enabled ? Colors.white : kTextMuted),
               const SizedBox(width: 8),
               Text(
-                widget.running ? 'Running…' : 'Open in Syncplay',
+                widget.running ? 'Stop Syncplay' : 'Open in Syncplay',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: widget.enabled ? Colors.white : kTextMuted,
+                  color: (widget.enabled || widget.running)
+                      ? Colors.white
+                      : kTextMuted,
                 ),
               ),
             ],

@@ -315,6 +315,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                         onTap: _pickPoster,
                         onMultiFileDrop: _routeFiles,
                         onClear: () => setState(() => _posterPath = null),
+                        showImagePreview: true,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -542,8 +543,15 @@ class _DoneBanner extends StatelessWidget {
               ],
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.folder_open_rounded),
+            color: accentColor,
+            onPressed: () => Process.run('explorer', ['/select,', outputPath]),
+            tooltip: 'Show in Explorer',
+          ),
           TextButton(
             onPressed: onReset,
+            style: TextButton.styleFrom(foregroundColor: accentColor),
             child: const Text('New'),
           ),
         ],
