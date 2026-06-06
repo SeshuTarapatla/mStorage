@@ -191,6 +191,8 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
             srtPath: _srtPath,
             outputDirectory: outDir,
             password: settings.password,
+            preserveAspectRatio: settings.preserveAspectRatio,
+            maskDurationSeconds: settings.maskDurationSeconds,
           ),
         );
   }

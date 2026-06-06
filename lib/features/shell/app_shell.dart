@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
 import '../encode/encode_screen.dart';
@@ -8,7 +9,12 @@ import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
 import '../settings/settings_screen.dart';
 
-final activeTabProvider = StateProvider<AppTab>((ref) => AppTab.encode);
+// Reads startupTab from already-loaded settings (main() loads before runApp).
+// ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
+final activeTabProvider = StateProvider<AppTab>((ref) {
+  final idx = ref.read(settingsProvider).startupTab;
+  return AppTab.values[idx.clamp(0, AppTab.values.length - 1)];
+});
 
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});

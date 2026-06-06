@@ -10,6 +10,7 @@ const _kMaskDuration = 'setting_mask_duration';
 const _kSyncplayPort = 'syncplay_port';
 const _kSyncplayUsername = 'syncplay_username';
 const _kSyncplayRoom = 'syncplay_room';
+const _kStartupTab = 'startup_tab';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -28,6 +29,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       syncplayPort: _prefs.getInt(_kSyncplayPort) ?? 8999,
       syncplayUsername: _prefs.getString(_kSyncplayUsername) ?? '',
       syncplayRoom: _prefs.getString(_kSyncplayRoom) ?? '',
+      startupTab: _prefs.getInt(_kStartupTab) ?? 0,
     );
   }
 
@@ -69,6 +71,16 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setSyncplayRoom(String value) async {
     state = state.copyWith(syncplayRoom: value);
     await _prefs.setString(_kSyncplayRoom, value);
+  }
+
+  Future<void> setStartupTab(int value) async {
+    state = state.copyWith(startupTab: value);
+    await _prefs.setInt(_kStartupTab, value);
+  }
+
+  Future<void> resetAll() async {
+    await _prefs.clear();
+    state = const AppSettings();
   }
 }
 

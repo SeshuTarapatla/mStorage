@@ -7,6 +7,8 @@ class EncodeConfig {
   final String? srtPath;
   final String outputDirectory;
   final String password;
+  final bool preserveAspectRatio;
+  final int maskDurationSeconds;
 
   const EncodeConfig({
     required this.videoPath,
@@ -17,5 +19,7 @@ class EncodeConfig {
     this.srtPath,
     required this.outputDirectory,
     this.password = '',
+    this.preserveAspectRatio = true,
+    this.maskDurationSeconds = 5,
   });
 }

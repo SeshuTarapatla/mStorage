@@ -12,6 +12,10 @@ void main() async {
   MediaKit.ensureInitialized();
   await localNotifier.setup(appName: 'mStorage');
 
+  // Load settings before building UI so activeTabProvider can read startupTab.
+  final container = ProviderContainer();
+  await container.read(settingsProvider.notifier).load();
+
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
@@ -28,7 +32,7 @@ void main() async {
     },
   );
 
-  runApp(const ProviderScope(child: MStorageApp()));
+  runApp(UncontrolledProviderScope(container: container, child: const MStorageApp()));
 }
 
 class MStorageApp extends ConsumerWidget {
@@ -36,7 +40,6 @@ class MStorageApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(settingsProvider.notifier).load();
     return MaterialApp(
       title: 'mStorage',
       debugShowCheckedModeBanner: false,

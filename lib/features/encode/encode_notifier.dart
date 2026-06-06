@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -75,11 +76,34 @@ class EncodeNotifier extends Notifier<EncodeState> {
         }
       }
 
+      // Detect poster orientation to choose the right canvas size
+      int targetWidth = 1920;
+      int targetHeight = 1080;
+      if (posterPath.isNotEmpty) {
+        try {
+          final bytes = await File(posterPath).readAsBytes();
+          final codec = await ui.instantiateImageCodec(bytes);
+          final frame = await codec.getNextFrame();
+          if (frame.image.height > frame.image.width) {
+            targetWidth = 1080;
+            targetHeight = 1920;
+          }
+          frame.image.dispose();
+          codec.dispose();
+        } catch (_) {
+          // Fall back to landscape on decode failure
+        }
+      }
+
       final maskResult = await FfmpegService.generateMaskVideo(
         posterPath: posterPath,
         outputPath: maskPath,
         date: config.date,
         time: config.time,
+        durationSeconds: config.maskDurationSeconds,
+        preserveAspectRatio: config.preserveAspectRatio,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
       );
       if (maskResult.exitCode != 0 || !File(maskPath).existsSync()) {
         state = state.copyWith(

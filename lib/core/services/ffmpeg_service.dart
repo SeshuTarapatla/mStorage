@@ -19,19 +19,26 @@ class FfmpegService {
     return dest;
   }
 
-  /// Builds a 5-second mask video from [posterPath].
-  /// Fixes aspect ratio: scale-to-fit + letterbox/pillarbox to 1920x1080.
+  /// Builds a mask video from [posterPath].
+  /// [targetWidth]x[targetHeight] is auto-detected from poster orientation by
+  /// the caller. [preserveAspectRatio] letterboxes; false stretches to fill.
   static Future<ProcessResult> generateMaskVideo({
     required String posterPath,
     required String outputPath,
     required String date,
     required String time,
     int durationSeconds = 5,
+    bool preserveAspectRatio = true,
+    int targetWidth = 1920,
+    int targetHeight = 1080,
   }) async {
     final ffmpeg = await binaryPath;
     final creationTime = '${date}T$time';
-    final scaleFilter =
-        'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black';
+    final w = targetWidth;
+    final h = targetHeight;
+    final scaleFilter = preserveAspectRatio
+        ? 'scale=$w:$h:force_original_aspect_ratio=decrease,pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black'
+        : 'scale=$w:$h';
     final args = [
       '-y',
       '-loop', '1',
