@@ -54,11 +54,13 @@ dev_dependencies:
 
 msix_config:
   display_name: mStorage
-  publisher_display_name: mStorage
+  publisher_display_name: Seshu Tarapatla
+  publisher: CN=Seshu Tarapatla
   identity_name: com.mstorage.app
   msix_version: 1.0.0.0
   logo_path: assets\icons\app_icon.png
   languages: en-us
+  install_certificate: false
 
 flutter:
   uses-material-design: true
