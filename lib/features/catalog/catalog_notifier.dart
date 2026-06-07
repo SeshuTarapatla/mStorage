@@ -1,11 +1,15 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/catalog_cache_manager.dart';
 import '../../core/services/settings_service.dart';
+import 'imdb_service.dart';
 import 'models/catalog_entry.dart';
 
 const _prefKey = 'catalog_sheet_url';
@@ -72,12 +76,105 @@ final catalogProvider = StateNotifierProvider<CatalogNotifier, CatalogState>((re
 class CatalogNotifier extends StateNotifier<CatalogState> {
   CatalogNotifier() : super(CatalogIdle());
 
+  static const _kCsvCacheTtl = Duration(hours: 1);
+  String? _cacheDir;
+
   static String? _extractSheetId(String url) {
     final match = RegExp(r'/spreadsheets/d/([a-zA-Z0-9_-]+)').firstMatch(url);
     return match?.group(1);
   }
 
-  Future<void> load(String sheetUrl) async {
+  // ── CSV disk cache helpers ─────────────────────────────────────────────────
+
+  Future<String> _ensureCacheDir() async {
+    _cacheDir ??= (await getApplicationSupportDirectory()).path;
+    return _cacheDir!;
+  }
+
+  Future<({String body, DateTime fetchedAt})?> _loadCsvCache(
+      String sheetId) async {
+    try {
+      final dir = await _ensureCacheDir();
+      final file = File(p.join(dir, 'catalog_csv_$sheetId.json'));
+      if (!file.existsSync()) return null;
+      final map =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final at = DateTime.tryParse(map['fetchedAt'] as String? ?? '');
+      if (at == null) return null;
+      return (body: map['body'] as String, fetchedAt: at);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _clearCsvCache(String sheetId) async {
+    try {
+      final dir = await _ensureCacheDir();
+      final file = File(p.join(dir, 'catalog_csv_$sheetId.json'));
+      if (file.existsSync()) await file.delete();
+    } catch (_) {}
+  }
+
+  Future<void> _saveCsvCache(String sheetId, String body) async {
+    try {
+      final dir = await _ensureCacheDir();
+      await File(p.join(dir, 'catalog_csv_$sheetId.json')).writeAsString(
+        jsonEncode(
+            {'fetchedAt': DateTime.now().toIso8601String(), 'body': body}),
+      );
+    } catch (_) {}
+  }
+
+  // ── CSV → entries pipeline (shared by cached and fresh paths) ─────────────
+
+  Future<List<CatalogEntry>> _buildEntries(String csvBody) async {
+    final rows = const CsvToListConverter(eol: '\n').convert(csvBody);
+    if (rows.length < 2) return [];
+
+    final headers = {
+      for (var i = 0; i < rows[0].length; i++)
+        rows[0][i]
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[\s_\-]+'), ''): i,
+    };
+
+    // Index of the visibility column. Canonical name is 'show'; legacy aliases kept for backward compat.
+    final visIdx = headers['show'] ?? headers['enabled'] ?? headers['visible'] ??
+        headers['active'];
+
+    final rawEntries = rows
+        .skip(1)
+        .where((row) {
+          if (row.isEmpty || row[0].toString().trim().isEmpty) return false;
+          if (visIdx != null && visIdx < row.length) {
+            final val = row[visIdx].toString().trim().toLowerCase();
+            if (val == 'false') return false;
+          }
+          return true;
+        })
+        .map((row) => CatalogEntry.fromRow(row, headers))
+        .toList();
+
+    final imdbIds = rawEntries
+        .where((e) => e.imdbId.isNotEmpty)
+        .map((e) => e.imdbId)
+        .toList();
+
+    final imdbMap = imdbIds.isNotEmpty
+        ? await ImdbService().resolve(imdbIds)
+        : <String, dynamic>{};
+
+    return rawEntries.map((e) {
+      final data = imdbMap[e.imdbId];
+      return data != null ? e.mergeImdb(data) : e;
+    }).toList();
+  }
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  Future<void> load(String sheetUrl, {bool forceRefresh = false}) async {
     state = CatalogLoading();
 
     final sheetId = _extractSheetId(sheetUrl);
@@ -89,35 +186,67 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     final csvUrl =
         'https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv&gid=0';
 
+    // Wipe all caches so everything is re-fetched from the network.
+    if (forceRefresh) {
+      await Future.wait([
+        _clearCsvCache(sheetId),
+        ImdbService().clearCache(),
+        CatalogCacheManager.instance.emptyCache(),
+      ]);
+    }
+
+    // Serve from disk cache immediately if available.
+    final cached = await _loadCsvCache(sheetId);
+    if (cached != null) {
+      final entries = await _buildEntries(cached.body);
+      if (mounted) state = CatalogLoaded(entries);
+
+      final age = DateTime.now().difference(cached.fetchedAt);
+      if (age < _kCsvCacheTtl) return; // fresh enough — skip network
+
+      // Stale: refresh silently in the background.
+      _silentRefresh(sheetId, csvUrl, cached.body);
+      return;
+    }
+
+    // No cache — fetch fresh (show loading until done).
     try {
       final response = await http.get(Uri.parse(csvUrl));
 
       if (response.statusCode != 200 ||
           response.body.trimLeft().startsWith('<')) {
-        state = CatalogError(
-          'Could not load sheet. Make sure it is shared as "Anyone with the link can view".',
-        );
+        if (mounted) {
+          state = CatalogError(
+            'Could not load sheet. Make sure it is shared as "Anyone with the link can view".',
+          );
+        }
         return;
       }
 
-      final rows = const CsvToListConverter(eol: '\n').convert(response.body);
-
-      if (rows.length < 2) {
-        state = CatalogLoaded([]);
-        return;
-      }
-
-      // Row 0 is the header — skip it.
-      final entries = rows
-          .skip(1)
-          .where((row) => row.isNotEmpty && row[0].toString().trim().isNotEmpty)
-          .map((row) => CatalogEntry.fromRow(row))
-          .toList();
-
-      state = CatalogLoaded(entries);
+      unawaited(_saveCsvCache(sheetId, response.body));
+      final entries = await _buildEntries(response.body);
+      if (mounted) state = CatalogLoaded(entries);
     } catch (e) {
-      state = CatalogError('Failed to fetch catalog: $e');
+      if (mounted) state = CatalogError('Failed to fetch catalog: $e');
     }
+  }
+
+  /// Fetches fresh CSV in the background; updates state only if content changed.
+  Future<void> _silentRefresh(
+      String sheetId, String csvUrl, String cachedBody) async {
+    try {
+      final response = await http.get(Uri.parse(csvUrl));
+      if (response.statusCode != 200 ||
+          response.body.trimLeft().startsWith('<')) { return; }
+      if (response.body == cachedBody) {
+        // Content unchanged — just bump the cache timestamp.
+        unawaited(_saveCsvCache(sheetId, cachedBody));
+        return;
+      }
+      unawaited(_saveCsvCache(sheetId, response.body));
+      final entries = await _buildEntries(response.body);
+      if (mounted) state = CatalogLoaded(entries);
+    } catch (_) {}
   }
 
   void reset() => state = CatalogIdle();

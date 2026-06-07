@@ -47,8 +47,13 @@ dependencies:
   http: ^1.2.0
   csv: ^6.0.0
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.3.0
   flutter_inappwebview: ^6.1.5
   flutter_staggered_grid_view: ^0.7.0
+
+  # Native key injection (Google Photos in-WebView download workaround)
+  win32: ^5.15.0
+  ffi: ^2.2.0
 
   # Icons
   cupertino_icons: ^1.0.8

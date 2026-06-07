@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import '../../core/services/catalog_cache_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
@@ -16,6 +18,8 @@ import 'models/catalog_entry.dart';
 import 'widgets/catalog_card.dart';
 import 'widgets/webview_overlay.dart';
 
+enum _SortMode { alpha, date, rating }
+
 class CatalogScreen extends ConsumerStatefulWidget {
   const CatalogScreen({super.key});
 
@@ -30,16 +34,25 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
   final _focusNode = FocusNode();
   String _search = '';
   bool _showDownloads = false;
+  _SortMode _sortMode = _SortMode.alpha;
+  bool _sortAsc = true;
+  Set<String> _filterLanguages = {};
+  Set<String> _filterGenres = {};
+  Set<int> _filterYears = {};
 
   // Expanded card overlay state
   CatalogEntry? _expandedEntry;
   Rect _expandedLocalRect = Rect.zero;
   Rect _bodyLocalRect = Rect.zero;
+  final _expandedCardKey = GlobalKey<CatalogCardExpandedState>();
   late final AnimationController _expandAnim = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 320),
   );
   final _bodyKey = GlobalKey();
+
+  static const _kSortMode = 'catalog_sort_mode';
+  static const _kSortAsc  = 'catalog_sort_asc';
 
   @override
   void initState() {
@@ -48,6 +61,26 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
+    _loadSort();
+  }
+
+  Future<void> _loadSort() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final modeStr = prefs.getString(_kSortMode);
+    final asc     = prefs.getBool(_kSortAsc) ?? true;
+    final mode = switch (modeStr) {
+      'date'   => _SortMode.date,
+      'rating' => _SortMode.rating,
+      _        => _SortMode.alpha,
+    };
+    setState(() { _sortMode = mode; _sortAsc = asc; });
+  }
+
+  Future<void> _saveSort(_SortMode mode, bool asc) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSortMode, mode.name);
+    await prefs.setBool(_kSortAsc, asc);
   }
 
   @override
@@ -63,6 +96,15 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
   bool _onHardwareKey(KeyEvent event) {
     if (!mounted || event is! KeyDownEvent) return false;
     if (event.logicalKey == LogicalKeyboardKey.keyD) {
+      // Don't intercept when a text field has focus (e.g. search bar).
+      final ctx = FocusManager.instance.primaryFocus?.context;
+      if (ctx != null &&
+          (ctx.widget is EditableText ||
+           ctx.findAncestorWidgetOfExactType<EditableText>() != null)) {
+        return false;
+      }
+      // Shift+D is Google Photos' in-WebView download shortcut — ignore it here.
+      if (HardwareKeyboard.instance.isShiftPressed) return false;
       setState(() => _showDownloads = !_showDownloads);
       return true;
     }
@@ -117,6 +159,16 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
       autofocus: true,
       onKeyEvent: (_, event) {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (_expandedEntry != null) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            _expandedCardKey.currentState?.navigate(-1);
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            _expandedCardKey.currentState?.navigate(1);
+            return KeyEventResult.handled;
+          }
+        }
         if (event.logicalKey == LogicalKeyboardKey.escape) {
           if (_expandedEntry != null) {
             _closeExpanded();
@@ -155,7 +207,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                   ? () =>
                       ref.read(downloadHistoryProvider.notifier).pruneDeleted()
                   : sheetUrl != null
-                      ? () => ref.read(catalogProvider.notifier).load(sheetUrl)
+                      ? () => ref.read(catalogProvider.notifier).load(sheetUrl, forceRefresh: true)
                       : null,
               onClearUrl: () {
                 ref.read(sheetUrlProvider.notifier).clear();
@@ -164,7 +216,34 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
               onToggleDownloads: () =>
                   setState(() => _showDownloads = !_showDownloads),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            if (!_showDownloads && catalogState is CatalogLoaded) ...[
+              _SortFilterBar(
+                entries: (catalogState).entries,
+                sortMode: _sortMode,
+                sortAsc: _sortAsc,
+                filterLanguages: _filterLanguages,
+                filterGenres: _filterGenres,
+                filterYears: _filterYears,
+                palette: palette,
+                onSortChanged: (mode, asc) {
+                  setState(() { _sortMode = mode; _sortAsc = asc; });
+                  _saveSort(mode, asc);
+                },
+                onLanguagesChanged: (v) =>
+                    setState(() => _filterLanguages = v),
+                onGenresChanged: (v) =>
+                    setState(() => _filterGenres = v),
+                onYearsChanged: (v) =>
+                    setState(() => _filterYears = v),
+                onClearFilters: () => setState(() {
+                  _filterLanguages = {};
+                  _filterGenres = {};
+                  _filterYears = {};
+                }),
+              ),
+              const SizedBox(height: 12),
+            ],
             Expanded(
               child: SizedBox.expand(
                 key: _bodyKey,
@@ -193,6 +272,11 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                           : _Body(
                               state: catalogState,
                               search: _search,
+                              sortMode: _sortMode,
+                              sortAsc: _sortAsc,
+                              filterLanguages: _filterLanguages,
+                              filterGenres: _filterGenres,
+                              filterYears: _filterYears,
                               palette: palette,
                               onOpenInBrowser: _openWebView,
                               onCardExpand: _onCardExpand,
@@ -245,6 +329,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
             bodyRect: _bodyLocalRect,
             animation: _expandAnim,
             palette: palette,
+            cardKey: _expandedCardKey,
             onClose: _closeExpanded,
             onOpenInBrowser: () {
               _closeExpanded();
@@ -261,7 +346,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
       context: context,
       barrierColor: Colors.black54,
       builder: (_) => WebViewOverlay(
-        url: entry.photosUrl,
+        url: entry.videoUrl,
         title: entry.title,
         onDownloadRequested: (url, filename) {
           ref.read(downloadProvider.notifier).enqueue(
@@ -548,6 +633,11 @@ class _IconBtn extends StatelessWidget {
 class _Body extends StatelessWidget {
   final CatalogState state;
   final String search;
+  final _SortMode sortMode;
+  final bool sortAsc;
+  final Set<String> filterLanguages;
+  final Set<String> filterGenres;
+  final Set<int> filterYears;
   final TabPalette palette;
   final ValueChanged<CatalogEntry> onOpenInBrowser;
   final void Function(CatalogEntry, Rect) onCardExpand;
@@ -555,6 +645,11 @@ class _Body extends StatelessWidget {
   const _Body({
     required this.state,
     required this.search,
+    required this.sortMode,
+    required this.sortAsc,
+    required this.filterLanguages,
+    required this.filterGenres,
+    required this.filterYears,
     required this.palette,
     required this.onOpenInBrowser,
     required this.onCardExpand,
@@ -563,12 +658,12 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (state) {
-      CatalogIdle() => _EmptyState(palette: palette),
-      CatalogLoading() => Center(
-          child: CircularProgressIndicator(color: palette.primary)),
-      CatalogError(:final message) => _ErrorState(message: message),
-      CatalogLoaded(:final entries) => _Grid(
-          entries: _filter(entries),
+      CatalogIdle()                  => _EmptyState(palette: palette),
+      CatalogLoading()               => Center(child: CircularProgressIndicator(color: palette.primary)),
+      CatalogError(:final message)   => _ErrorState(message: message),
+      CatalogLoaded(:final entries)  => _Grid(
+          entries: _filterAndSort(entries),
+          allEntries: entries,
           palette: palette,
           onOpenInBrowser: onOpenInBrowser,
           onCardExpand: onCardExpand,
@@ -576,25 +671,43 @@ class _Body extends StatelessWidget {
     };
   }
 
-  List<CatalogEntry> _filter(List<CatalogEntry> entries) {
-    if (search.isEmpty) return entries;
-    final q = search.toLowerCase();
-    return entries.where((e) {
-      return e.title.toLowerCase().contains(q) ||
-          e.description.toLowerCase().contains(q) ||
-          e.tags.any((t) => t.toLowerCase().contains(q));
+  List<CatalogEntry> _filterAndSort(List<CatalogEntry> entries) {
+    var result = entries.where((e) {
+      if (search.isNotEmpty) {
+        final q = search.toLowerCase();
+        if (!e.title.toLowerCase().contains(q) &&
+            !e.plot.toLowerCase().contains(q) &&
+            !e.genres.any((t) => t.toLowerCase().contains(q)) &&
+            !e.tags.any((t) => t.toLowerCase().contains(q))) { return false; }
+      }
+      if (filterLanguages.isNotEmpty && !filterLanguages.contains(e.language)) return false;
+      if (filterGenres.isNotEmpty && !e.genres.any(filterGenres.contains)) return false;
+      if (filterYears.isNotEmpty && !filterYears.contains(e.date?.year)) return false;
+      return true;
     }).toList();
+
+    result.sort((a, b) {
+      final cmp = switch (sortMode) {
+        _SortMode.alpha  => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        _SortMode.date   => (a.date ?? DateTime(0)).compareTo(b.date ?? DateTime(0)),
+        _SortMode.rating => (a.imdbRating ?? 0).compareTo(b.imdbRating ?? 0),
+      };
+      return sortAsc ? cmp : -cmp;
+    });
+    return result;
   }
 }
 
 class _Grid extends StatefulWidget {
   final List<CatalogEntry> entries;
+  final List<CatalogEntry> allEntries;
   final TabPalette palette;
   final ValueChanged<CatalogEntry> onOpenInBrowser;
   final void Function(CatalogEntry, Rect) onCardExpand;
 
   const _Grid({
     required this.entries,
+    required this.allEntries,
     required this.palette,
     required this.onOpenInBrowser,
     required this.onCardExpand,
@@ -611,15 +724,20 @@ class _GridState extends State<_Grid> {
   @override
   void initState() {
     super.initState();
-    _resolveRatios(widget.entries);
+    _resolveRatios(widget.allEntries);
   }
 
   @override
   void didUpdateWidget(_Grid old) {
     super.didUpdateWidget(old);
-    if (old.entries != widget.entries) {
-      _ratios.clear();
-      _resolveRatios(widget.entries);
+    if (old.allEntries != widget.allEntries) {
+      // Only resolve genuinely new URLs — never wipe the existing pool so the
+      // median stays stable when one landscape image resolves before the rest.
+      final oldUrls = old.allEntries.map((e) => e.thumbnailUrl).toSet();
+      final newEntries = widget.allEntries
+          .where((e) => e.thumbnailUrl.isNotEmpty && !oldUrls.contains(e.thumbnailUrl))
+          .toList();
+      if (newEntries.isNotEmpty) _resolveRatios(newEntries);
     }
   }
 
@@ -629,7 +747,8 @@ class _GridState extends State<_Grid> {
         .where((u) => u.isNotEmpty)
         .toSet();
     for (final url in urls) {
-      final provider = CachedNetworkImageProvider(url);
+      final provider = CachedNetworkImageProvider(url,
+          cacheManager: CatalogCacheManager.instance);
       final stream = provider.resolve(const ImageConfiguration());
       late ImageStreamListener listener;
       listener = ImageStreamListener(
@@ -647,10 +766,12 @@ class _GridState extends State<_Grid> {
 
   void _onRatio(double ratio) {
     _ratios.add(ratio);
-    // Prefer portrait thumbnails (ratio < 1) — most movie posters are tall.
-    final candidates = _ratios.where((r) => r < 1.0).toList();
-    final pool = candidates.isNotEmpty ? candidates : _ratios;
-    final sorted = List<double>.from(pool)..sort();
+    // Only use portrait images (ratio < 1) to set the grid aspect ratio.
+    // Skip the update entirely until at least one portrait image resolves so
+    // a landscape thumbnail that decodes first never sets a landscape ratio.
+    final portraits = _ratios.where((r) => r < 1.0).toList();
+    if (portraits.isEmpty) return;
+    final sorted = List<double>.from(portraits)..sort();
     final median = sorted[sorted.length ~/ 2];
     if ((median - _aspectRatio).abs() > 0.02 && mounted) {
       setState(() => _aspectRatio = median);
@@ -692,6 +813,7 @@ class _CardDetail extends StatelessWidget {
   final Rect bodyRect;      // body area rect in same coords — for clamping
   final AnimationController animation;
   final TabPalette palette;
+  final GlobalKey<CatalogCardExpandedState> cardKey;
   final VoidCallback onClose;
   final VoidCallback onOpenInBrowser;
 
@@ -701,6 +823,7 @@ class _CardDetail extends StatelessWidget {
     required this.bodyRect,
     required this.animation,
     required this.palette,
+    required this.cardKey,
     required this.onClose,
     required this.onOpenInBrowser,
   });
@@ -708,7 +831,7 @@ class _CardDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const expandedW = 360.0;
-    const edgePad = 16.0;
+    const edgePad = 0.0;
 
     final expandedMaxH = (bodyRect.height - edgePad * 2).clamp(0.0, 640.0);
 
@@ -736,10 +859,12 @@ class _CardDetail extends StatelessWidget {
           child: GestureDetector(
             onTap: onClose,
             child: CatalogCardExpanded(
+              key: cardKey,
               entry: entry,
               palette: palette,
               onClose: onClose,
               onOpenInBrowser: onOpenInBrowser,
+              maxHeight: expandedMaxH,
             ),
           ),
         ),
@@ -1208,6 +1333,7 @@ class _DownloadRecordRow extends StatelessWidget {
                 child: record.thumbnailUrl.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: record.thumbnailUrl,
+                        cacheManager: CatalogCacheManager.instance,
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => Container(
                           color: kSurface2Color,
@@ -1304,5 +1430,333 @@ class _DownloadRecordRow extends StatelessWidget {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sort + Filter bar
+// ---------------------------------------------------------------------------
+
+class _SortFilterBar extends StatelessWidget {
+  final List<CatalogEntry> entries;
+  final _SortMode sortMode;
+  final bool sortAsc;
+  final Set<String> filterLanguages;
+  final Set<String> filterGenres;
+  final Set<int> filterYears;
+  final TabPalette palette;
+  final void Function(_SortMode, bool) onSortChanged;
+  final void Function(Set<String>) onLanguagesChanged;
+  final void Function(Set<String>) onGenresChanged;
+  final void Function(Set<int>) onYearsChanged;
+  final VoidCallback onClearFilters;
+
+  const _SortFilterBar({
+    required this.entries,
+    required this.sortMode,
+    required this.sortAsc,
+    required this.filterLanguages,
+    required this.filterGenres,
+    required this.filterYears,
+    required this.palette,
+    required this.onSortChanged,
+    required this.onLanguagesChanged,
+    required this.onGenresChanged,
+    required this.onYearsChanged,
+    required this.onClearFilters,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final languages = entries
+        .map((e) => e.language).whereType<String>().toSet().toList()..sort();
+    final genres = entries
+        .expand((e) => e.genres).toSet().toList()..sort();
+    final years = entries
+        .map((e) => e.date?.year).whereType<int>().toSet().toList()
+        ..sort((a, b) => b.compareTo(a));
+
+    final hasFilters = filterLanguages.isNotEmpty ||
+        filterGenres.isNotEmpty || filterYears.isNotEmpty;
+
+    return Row(
+      children: [
+        // ── Sort buttons ────────────────────────────────────────────────────
+        _SortBtn(label: 'A–Z',    mode: _SortMode.alpha,  current: sortMode, asc: sortAsc, palette: palette, onTap: onSortChanged),
+        const SizedBox(width: 4),
+        _SortBtn(label: 'Date',   mode: _SortMode.date,   current: sortMode, asc: sortAsc, palette: palette, onTap: onSortChanged),
+        const SizedBox(width: 4),
+        _SortBtn(label: 'Rating', mode: _SortMode.rating, current: sortMode, asc: sortAsc, palette: palette, onTap: onSortChanged),
+        const Spacer(),
+        // ── Filter dropdowns ────────────────────────────────────────────────
+        if (hasFilters) ...[
+          _ClearBtn(onTap: onClearFilters),
+          const SizedBox(width: 6),
+        ],
+        if (languages.isNotEmpty) ...[
+          _FilterBtn(
+            label: 'Language',
+            options: languages,
+            selected: filterLanguages,
+            palette: palette,
+            onChanged: onLanguagesChanged,
+          ),
+          const SizedBox(width: 6),
+        ],
+        if (genres.isNotEmpty) ...[
+          _FilterBtn(
+            label: 'Genre',
+            options: genres,
+            selected: filterGenres,
+            palette: palette,
+            onChanged: onGenresChanged,
+          ),
+          const SizedBox(width: 6),
+        ],
+        if (years.isNotEmpty)
+          _FilterBtn(
+            label: 'Year',
+            options: years.map((y) => '$y').toList(),
+            selected: filterYears.map((y) => '$y').toSet(),
+            palette: palette,
+            onChanged: (s) => onYearsChanged(s.map(int.parse).toSet()),
+          ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _SortBtn extends StatelessWidget {
+  final String label;
+  final _SortMode mode;
+  final _SortMode current;
+  final bool asc;
+  final TabPalette palette;
+  final void Function(_SortMode, bool) onTap;
+
+  const _SortBtn({
+    required this.label,
+    required this.mode,
+    required this.current,
+    required this.asc,
+    required this.palette,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = current == mode;
+    final color = active ? palette.primary : kTextSecondary;
+    return GestureDetector(
+      onTap: () => onTap(mode, active ? !asc : true),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? palette.primary.withValues(alpha: 0.1) : kSurfaceColor,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: active ? palette.primary.withValues(alpha: 0.45) : kBorderColor,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: TextStyle(fontSize: 12, color: color)),
+            if (active) ...[
+              const SizedBox(width: 3),
+              Icon(
+                asc ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                size: 11, color: color,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _FilterBtn extends StatefulWidget {
+  final String label;
+  final List<String> options;
+  final Set<String> selected;
+  final TabPalette palette;
+  final void Function(Set<String>) onChanged;
+
+  const _FilterBtn({
+    required this.label,
+    required this.options,
+    required this.selected,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  @override
+  State<_FilterBtn> createState() => _FilterBtnState();
+}
+
+class _FilterBtnState extends State<_FilterBtn> {
+  final _link = LayerLink();
+  final _overlay = OverlayPortalController();
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.selected.isNotEmpty;
+    final labelText = active
+        ? '${widget.label} (${widget.selected.length})'
+        : widget.label;
+    final color = active ? widget.palette.primary : kTextSecondary;
+
+    return CompositedTransformTarget(
+      link: _link,
+      child: TapRegion(
+        groupId: _overlay,
+        onTapOutside: (_) => _overlay.hide(),
+        child: OverlayPortal(
+          controller: _overlay,
+          overlayChildBuilder: (_) => CompositedTransformFollower(
+            link: _link,
+            targetAnchor: Alignment.bottomRight,
+            followerAnchor: Alignment.topRight,
+            offset: const Offset(0, 4),
+            showWhenUnlinked: false,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: TapRegion(
+                groupId: _overlay,
+                child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  constraints: const BoxConstraints(
+                      minWidth: 150, maxWidth: 220, maxHeight: 280),
+                    decoration: BoxDecoration(
+                      color: kSurfaceColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: kBorderColor),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black54, blurRadius: 16)
+                      ],
+                    ),
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      shrinkWrap: true,
+                      children: widget.options.map((opt) {
+                        final checked = widget.selected.contains(opt);
+                        return InkWell(
+                          onTap: () {
+                            final next = Set<String>.from(widget.selected);
+                            if (checked) { next.remove(opt); } else { next.add(opt); }
+                            widget.onChanged(next);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 100),
+                                  width: 15, height: 15,
+                                  decoration: BoxDecoration(
+                                    color: checked
+                                        ? widget.palette.primary
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(3),
+                                    border: Border.all(
+                                      color: checked
+                                          ? widget.palette.primary
+                                          : kBorderColor,
+                                    ),
+                                  ),
+                                  child: checked
+                                      ? const Icon(Icons.check_rounded,
+                                          size: 11, color: Colors.black)
+                                      : null,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(opt,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: checked
+                                              ? kTextPrimary
+                                              : kTextSecondary)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          child: GestureDetector(
+            onTap: _overlay.toggle,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: active
+                    ? widget.palette.primary.withValues(alpha: 0.1)
+                    : kSurfaceColor,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: active
+                      ? widget.palette.primary.withValues(alpha: 0.45)
+                      : kBorderColor,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(labelText,
+                      style: TextStyle(fontSize: 12, color: color)),
+                  const SizedBox(width: 3),
+                  Icon(Icons.keyboard_arrow_down_rounded,
+                      size: 13, color: color),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _ClearBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ClearBtn({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: kSurfaceColor,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: kBorderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.close_rounded, size: 11, color: kTextMuted),
+            const SizedBox(width: 4),
+            Text('Clear', style: TextStyle(fontSize: 12, color: kTextMuted)),
+          ],
+        ),
+      ),
+    );
   }
 }

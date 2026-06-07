@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../core/services/gh_auth_service.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../admin/admin_screen.dart';
 import '../decode/decode_notifier.dart';
 import '../encode/encode_notifier.dart';
 import '../encode/encode_screen.dart';
@@ -18,8 +19,12 @@ import '../settings/settings_screen.dart';
 // ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
 final activeTabProvider = StateProvider<AppTab>((ref) {
   final idx = ref.read(settingsProvider).startupTab;
-  return AppTab.values[idx.clamp(0, AppTab.values.length - 1)];
+  // Clamp to public tabs only — admin is the last enum value and not a startup option.
+  return AppTab.values[idx.clamp(0, AppTab.settings.index)];
 });
+
+final ghAuthProvider = FutureProvider<bool>(
+    (ref) => GhAuthService().isAuthorized());
 
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});
@@ -29,71 +34,32 @@ class AppShell extends ConsumerWidget {
     final activeTab = ref.watch(activeTabProvider);
     final palette = activeTab.palette;
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.digit1): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.encode,
-        const SingleActivator(LogicalKeyboardKey.digit2): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.decode,
-        const SingleActivator(LogicalKeyboardKey.digit3): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.player,
-        const SingleActivator(LogicalKeyboardKey.digit4): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.catalog,
-        const SingleActivator(LogicalKeyboardKey.digit5): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.settings,
-      },
-      child: Focus(
-        autofocus: true,
-        child: AnimatedTheme(
-          duration: const Duration(milliseconds: 300),
-          data: Theme.of(context),
-          child: Scaffold(
-            backgroundColor: kBgColor,
-            body: Column(
-              children: [
-                _TitleBar(activeTab: activeTab, palette: palette),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _Sidebar(activeTab: activeTab, palette: palette),
-                      Expanded(
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          color: palette.surface,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 250),
-                            layoutBuilder: (currentChild, previousChildren) =>
-                                Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                ...previousChildren,
-                                ?currentChild,
-                              ],
-                            ),
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0.02, 0),
-                                  end: Offset.zero,
-                                ).animate(animation),
-                                child: child,
-                              ),
-                            ),
-                            child: KeyedSubtree(
-                              key: ValueKey(activeTab),
-                              child: _screenFor(activeTab),
-                            ),
-                          ),
-                        ),
+    return AnimatedTheme(
+      duration: const Duration(milliseconds: 300),
+      data: Theme.of(context),
+      child: Scaffold(
+        backgroundColor: kBgColor,
+        body: Column(
+          children: [
+            _TitleBar(activeTab: activeTab, palette: palette),
+            Expanded(
+              child: Row(
+                children: [
+                  _Sidebar(activeTab: activeTab, palette: palette),
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      color: palette.surface,
+                      child: IndexedStack(
+                        index: activeTab.index,
+                        children: AppTab.values.map(_screenFor).toList(),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -106,6 +72,7 @@ class AppShell extends ConsumerWidget {
       AppTab.player => const PlayerScreen(),
       AppTab.catalog => const CatalogScreen(),
       AppTab.settings => const SettingsScreen(),
+      AppTab.admin => const AdminScreen(),
     };
   }
 }
@@ -242,7 +209,7 @@ class _Sidebar extends ConsumerStatefulWidget {
 class _SidebarState extends ConsumerState<_Sidebar> {
   AppTab? _hovered;
 
-  static const _items = [
+  static const _baseItems = [
     (AppTab.encode, Icons.upload_rounded, 'Encode'),
     (AppTab.decode, Icons.download_rounded, 'Decode'),
     (AppTab.player, Icons.play_circle_rounded, 'Player'),
@@ -250,10 +217,16 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     (AppTab.settings, Icons.settings_rounded, 'Settings'),
   ];
 
+  static const _adminItem =
+      (AppTab.admin, Icons.admin_panel_settings_rounded, 'Admin');
+
   @override
   Widget build(BuildContext context) {
     final encodeRunning = ref.watch(encodeProvider).isRunning;
     final decodeRunning = ref.watch(decodeProvider).isRunning;
+    final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
+
+    final items = isAdmin ? [..._baseItems, _adminItem] : _baseItems;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -265,7 +238,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          for (final item in _items)
+          for (final item in items)
             _SidebarItem(
               tab: item.$1,
               icon: item.$2,

@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../../core/services/catalog_cache_manager.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/tab_colors.dart';
 import '../models/catalog_entry.dart';
@@ -41,6 +42,7 @@ class CatalogDetailPanel extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                       child: CachedNetworkImage(
                         imageUrl: entry.thumbnailUrl,
+                        cacheManager: CatalogCacheManager.instance,
                         fit: BoxFit.contain,
                         width: double.infinity,
                         placeholder: (_, _) => Container(height: 160, color: kSurface2Color),
@@ -52,9 +54,9 @@ class CatalogDetailPanel extends StatelessWidget {
                       ),
                     ),
                   const SizedBox(height: 16),
-                  if (entry.description.isNotEmpty) ...[
+                  if (entry.plot.isNotEmpty) ...[
                     Text(
-                      entry.description,
+                      entry.plot,
                       style: TextStyle(fontSize: 13, color: kTextSecondary, height: 1.5),
                     ),
                     const SizedBox(height: 16),
@@ -67,13 +69,23 @@ class CatalogDetailPanel extends StatelessWidget {
                     value: entry.encoded ? 'Yes' : 'No',
                     valueColor: entry.encoded ? palette.primary : kTextMuted,
                   ),
-                  if (entry.tags.isNotEmpty) ...[
+                  if (entry.genres.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
-                      children: entry.tags
+                      children: entry.genres
                           .map((t) => _TagChip(tag: t, palette: palette))
+                          .toList(),
+                    ),
+                  ],
+                  if (entry.tags.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: entry.tags
+                          .map((t) => _TagChip(tag: t, palette: palette, muted: true))
                           .toList(),
                     ),
                   ],
@@ -81,7 +93,7 @@ class CatalogDetailPanel extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: entry.photosUrl.isNotEmpty ? onOpenInBrowser : null,
+                      onPressed: entry.videoUrl.isNotEmpty ? onOpenInBrowser : null,
                       icon: const Icon(Icons.open_in_new_rounded, size: 16),
                       label: const Text('View & Download'),
                       style: FilledButton.styleFrom(
@@ -186,18 +198,20 @@ class _MetaRow extends StatelessWidget {
 class _TagChip extends StatelessWidget {
   final String tag;
   final TabPalette palette;
+  final bool muted;
 
-  const _TagChip({required this.tag, required this.palette});
+  const _TagChip({required this.tag, required this.palette, this.muted = false});
 
   @override
   Widget build(BuildContext context) {
+    final color = muted ? kTextMuted : palette.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: palette.primary.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(tag, style: TextStyle(fontSize: 11, color: palette.primary)),
+      child: Text(tag, style: TextStyle(fontSize: 11, color: color)),
     );
   }
 }

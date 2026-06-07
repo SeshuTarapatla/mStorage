@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/tab_colors.dart';
+import '../../../core/util/key_injector.dart';
 
 class WebViewOverlay extends StatefulWidget {
   final String url;
@@ -26,6 +27,46 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
 
   static const _videoExts = {'.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v'};
 
+  // Injected via onLoadStop/evaluateJavascript (the AT_DOCUMENT_START path
+  // produces nothing on flutter_inappwebview_windows).
+  //
+  // Google Photos' in-page "Download" menu item produces no usable download
+  // event inside WebView2 (verified: clicking it fires zero fetch/anchor/nav
+  // activity). The page's own Shift+D shortcut DOES work — but only for a
+  // *trusted* key event; a synthetic JS KeyboardEvent (isTrusted=false) is
+  // ignored. So we just detect the click and let Dart inject a real Shift+D
+  // via Win32 SendInput.
+  static const _downloadInterceptScript = r'''
+(function() {
+  if (window.__mdInstalled) { return; }
+  window.__mdInstalled = true;
+
+  function signalDownloadClick() {
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('mDownloadClick');
+      }
+    } catch (e) {}
+  }
+
+  // ── clicks on the Download menu item ─────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el !== document) {
+      if (el.getAttribute) {
+        var role = el.getAttribute('role') || '';
+        var txt  = (el.textContent || '').trim().slice(0, 20).toLowerCase();
+        if ((role === 'menuitem' || role === 'option') && txt.indexOf('download') !== -1) {
+          signalDownloadClick();
+          break;
+        }
+      }
+      el = el.parentElement;
+    }
+  }, true);
+})();
+''';
+
   @override
   void initState() {
     super.initState();
@@ -35,8 +76,6 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
   bool _isVideoUrl(String url) {
     final lower = url.toLowerCase();
     if (_videoExts.any((ext) => lower.contains(ext))) return true;
-    // Any top-level navigation to googleusercontent.com from a Photos page is a
-    // file/video download (subresources like thumbnails don't fire shouldOverrideUrlLoading).
     if (lower.contains('googleusercontent.com')) return true;
     return false;
   }
@@ -55,6 +94,7 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
   }
 
   void _triggerDownload(String url, {String? suggestedFilename}) {
+    if (!mounted) return;
     Navigator.of(context).pop();
     final filename = (suggestedFilename?.isNotEmpty == true)
         ? suggestedFilename!
@@ -101,11 +141,12 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
               onClose: () => Navigator.of(context).pop(),
               onBack: () => _controller?.goBack(),
               onRefresh: () => _controller?.reload(),
-              onDownload: () { _handleGoldenDownload(); },
+              onDownload: _handleGoldenDownload,
             ),
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(12)),
                 child: InAppWebView(
                   initialUrlRequest: URLRequest(url: WebUri(widget.url)),
                   initialSettings: InAppWebViewSettings(
@@ -113,25 +154,68 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
                     useShouldOverrideUrlLoading: true,
                     javaScriptEnabled: true,
                   ),
-                  onWebViewCreated: (c) => _controller = c,
+                  onWebViewCreated: (c) {
+                    _controller = c;
+                    // Google Photos' Download menu item was clicked: fire a
+                    // real Shift+D so the page's own (working) shortcut runs.
+                    c.addJavaScriptHandler(
+                      handlerName: 'mDownloadClick',
+                      callback: (args) {
+                        KeyInjector.sendShiftD();
+                        return null;
+                      },
+                    );
+                  },
                   onLoadStart: (_, url) => setState(() {
                     _loading = true;
                     _currentUrl = url?.toString() ?? _currentUrl;
                   }),
-                  onLoadStop: (_, url) => setState(() {
-                    _loading = false;
-                    _currentUrl = url?.toString() ?? _currentUrl;
-                  }),
-                  // Intercept navigations that are direct video/download URLs.
+                  onLoadStop: (c, url) async {
+                    setState(() {
+                      _loading = false;
+                      _currentUrl = url?.toString() ?? _currentUrl;
+                    });
+                    // Inject the Download-click detector after each page load
+                    // (AT_DOCUMENT_START injection doesn't run on Windows).
+                    try {
+                      await c.evaluateJavascript(source: _downloadInterceptScript);
+                    } catch (_) {}
+                  },
+                  // Catches direct video URL navigations and mdownload:// fallback signals.
                   shouldOverrideUrlLoading: (_, action) async {
                     final url = action.request.url?.toString() ?? '';
+                    if (url.startsWith('mdownload://')) {
+                      final uri = Uri.parse(url);
+                      final downloadUrl = Uri.decodeComponent(
+                          uri.queryParameters['url'] ?? '');
+                      final filename = Uri.decodeComponent(
+                          uri.queryParameters['n'] ?? '');
+                      if (downloadUrl.isNotEmpty) {
+                        _triggerDownload(downloadUrl,
+                            suggestedFilename:
+                                filename.isNotEmpty ? filename : null);
+                      }
+                      return NavigationActionPolicy.CANCEL;
+                    }
                     if (_isVideoUrl(url)) {
                       _triggerDownload(url);
                       return NavigationActionPolicy.CANCEL;
                     }
                     return NavigationActionPolicy.ALLOW;
                   },
-                  // Fallback: fires for HTTP Content-Disposition downloads.
+                  // Catches window.open() popup download attempts.
+                  onCreateWindow: (_, action) async {
+                    final url = action.request.url?.toString() ?? '';
+                    if (url.isNotEmpty) {
+                      if (_isVideoUrl(url)) {
+                        _triggerDownload(url);
+                      } else {
+                        _controller?.loadUrl(urlRequest: action.request);
+                      }
+                    }
+                    return true;
+                  },
+                  // Catches HTTP Content-Disposition downloads (Shift+D path).
                   onDownloadStartRequest: (_, req) {
                     _triggerDownload(
                       req.url.toString(),
