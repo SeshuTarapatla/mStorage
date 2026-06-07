@@ -179,7 +179,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _DirSettingRow(
                 icon: Icons.upload_rounded,
                 title: 'Encode Output',
-                subtitle: 'Defaults to <video folder>/output/',
+                subtitle: 'Where encoded mask MP4 files are saved.',
                 accent: accent,
                 dir: settings.encodeOutputDirectory,
                 onPick: () async {
@@ -195,12 +195,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => ref
                         .read(settingsProvider.notifier)
                         .setEncodeOutputDirectory(''),
-                placeholder: 'Default: <video folder>/output/',
+                placeholder: 'Default: Videos\\mStorage\\Encoded',
               ),
               _DirSettingRow(
                 icon: Icons.download_rounded,
                 title: 'Decode Output',
-                subtitle: 'Defaults to same folder as video',
+                subtitle: 'Where extracted files from decoded videos are saved.',
                 accent: accent,
                 dir: settings.decodeOutputDirectory,
                 onPick: () async {
@@ -216,7 +216,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => ref
                         .read(settingsProvider.notifier)
                         .setDecodeOutputDirectory(''),
-                placeholder: 'Default: same folder as video',
+                placeholder: 'Default: Videos\\mStorage\\Decoded',
+              ),
+              _DirSettingRow(
+                icon: Icons.cloud_download_rounded,
+                title: 'Catalog Downloads',
+                subtitle: 'Where videos downloaded from the Catalog are saved.',
+                accent: accent,
+                dir: settings.catalogDownloadDirectory,
+                onPick: () async {
+                  final dir = await FilePicker.platform.getDirectoryPath();
+                  if (dir != null) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setCatalogDownloadDirectory(dir);
+                  }
+                },
+                onClear: settings.catalogDownloadDirectory.isEmpty
+                    ? null
+                    : () => ref
+                        .read(settingsProvider.notifier)
+                        .setCatalogDownloadDirectory(''),
+                placeholder: 'Default: Videos\\mStorage\\Downloaded',
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 120.ms),

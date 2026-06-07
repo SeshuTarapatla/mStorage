@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum AppTab { encode, decode, player, settings }
+enum AppTab { encode, decode, player, catalog, settings }
 
 class TabPalette {
   final Color primary;
@@ -34,6 +34,12 @@ const tabPalettes = {
     secondary: Color(0xFFFB7185),
     glow: Color(0x66F43F5E),
     surface: Color(0xFF1F0A0F),
+  ),
+  AppTab.catalog: TabPalette(
+    primary: Color(0xFFF59E0B),
+    secondary: Color(0xFFFBBF24),
+    glow: Color(0x66F59E0B),
+    surface: Color(0xFF1F1608),
   ),
   AppTab.settings: TabPalette(
     primary: Color(0xFFA78BFA),

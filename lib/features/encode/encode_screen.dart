@@ -178,7 +178,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
         ? p.basenameWithoutExtension(_videoPath!)
         : _titleCtrl.text.trim();
     final outDir = settings.encodeOutputDirectory.isEmpty
-        ? p.join(p.dirname(_videoPath!), 'output')
+        ? AppDirectories.encoded
         : settings.encodeOutputDirectory;
 
     await ref.read(encodeProvider.notifier).run(

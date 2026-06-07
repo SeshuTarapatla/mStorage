@@ -11,6 +11,7 @@ import '../encode/encode_notifier.dart';
 import '../encode/encode_screen.dart';
 import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
+import '../catalog/catalog_screen.dart';
 import '../settings/settings_screen.dart';
 
 // Reads startupTab from already-loaded settings (main() loads before runApp).
@@ -30,13 +31,15 @@ class AppShell extends ConsumerWidget {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+        const SingleActivator(LogicalKeyboardKey.digit1): () =>
             ref.read(activeTabProvider.notifier).state = AppTab.encode,
-        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+        const SingleActivator(LogicalKeyboardKey.digit2): () =>
             ref.read(activeTabProvider.notifier).state = AppTab.decode,
-        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+        const SingleActivator(LogicalKeyboardKey.digit3): () =>
             ref.read(activeTabProvider.notifier).state = AppTab.player,
-        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
+        const SingleActivator(LogicalKeyboardKey.digit4): () =>
+            ref.read(activeTabProvider.notifier).state = AppTab.catalog,
+        const SingleActivator(LogicalKeyboardKey.digit5): () =>
             ref.read(activeTabProvider.notifier).state = AppTab.settings,
       },
       child: Focus(
@@ -101,6 +104,7 @@ class AppShell extends ConsumerWidget {
       AppTab.encode => const EncodeScreen(),
       AppTab.decode => const DecodeScreen(),
       AppTab.player => const PlayerScreen(),
+      AppTab.catalog => const CatalogScreen(),
       AppTab.settings => const SettingsScreen(),
     };
   }
@@ -242,6 +246,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     (AppTab.encode, Icons.upload_rounded, 'Encode'),
     (AppTab.decode, Icons.download_rounded, 'Decode'),
     (AppTab.player, Icons.play_circle_rounded, 'Player'),
+    (AppTab.catalog, Icons.photo_library_rounded, 'Catalog'),
     (AppTab.settings, Icons.settings_rounded, 'Settings'),
   ];
 
