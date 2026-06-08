@@ -41,7 +41,7 @@ class _AdminScreenState extends State<AdminScreen> {
   final _videoUrlCtrl = TextEditingController();
   final _languageCtrl = TextEditingController();
   final _sizeMbCtrl   = TextEditingController();
-  bool _encoded = false;
+  bool _encoded = true;
   bool _show    = true;
 
   // All images fetched from API (up to 100).
@@ -133,7 +133,7 @@ class _AdminScreenState extends State<AdminScreen> {
       _videoUrlCtrl.clear();
       _languageCtrl.clear();
       _sizeMbCtrl.clear();
-      _encoded = false;
+      _encoded = true;
       _show = true;
     });
 

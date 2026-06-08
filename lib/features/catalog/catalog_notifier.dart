@@ -115,6 +115,15 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     } catch (_) {}
   }
 
+  Future<void> clearAllCsvCaches() async {
+    try {
+      final dir = await _ensureCacheDir();
+      for (final f in Directory(dir).listSync().whereType<File>()) {
+        if (p.basename(f.path).startsWith('catalog_csv_')) await f.delete();
+      }
+    } catch (_) {}
+  }
+
   Future<void> _saveCsvCache(String sheetId, String body) async {
     try {
       final dir = await _ensureCacheDir();

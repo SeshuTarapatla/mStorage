@@ -455,6 +455,8 @@ class CatalogCardExpandedState extends State<CatalogCardExpanded> {
 // Rect.largest sentinel means "analyzed, no meaningful crop found".
 final _cropRectCache = <String, Rect>{};
 
+void clearSlideCropCache() => _cropRectCache.clear();
+
 class _SlideshowPage extends StatefulWidget {
   final String url;
   const _SlideshowPage({required this.url});
