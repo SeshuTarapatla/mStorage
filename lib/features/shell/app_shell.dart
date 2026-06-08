@@ -26,13 +26,72 @@ final activeTabProvider = StateProvider<AppTab>((ref) {
 final ghAuthProvider = FutureProvider<bool>(
     (ref) => GhAuthService().isAuthorized());
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _enterFade;
+  late final Animation<Offset> _enterSlide;
+  late final Animation<double> _exitFade;
+
+  AppTab? _exitingTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    )..value = 1.0; // start complete so first render is instant
+
+    final curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _enterFade  = curved;
+    _enterSlide = Tween<Offset>(
+      begin: const Offset(0, 0.055),
+      end: Offset.zero,
+    ).animate(curved);
+    _exitFade = Tween<double>(begin: 1.0, end: 0.0).animate(curved);
+
+    _ctrl.addStatusListener((s) {
+      if (s == AnimationStatus.completed && mounted) {
+        setState(() => _exitingTab = null);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Widget _screenFor(AppTab tab) => switch (tab) {
+    AppTab.encode   => const EncodeScreen(),
+    AppTab.decode   => const DecodeScreen(),
+    AppTab.player   => const PlayerScreen(),
+    AppTab.catalog  => const CatalogScreen(),
+    AppTab.settings => const SettingsScreen(),
+    AppTab.admin    => const AdminScreen(),
+  };
+
+  @override
+  Widget build(BuildContext context) {
     final activeTab = ref.watch(activeTabProvider);
     final palette = activeTab.palette;
+
+    // Trigger animation whenever the active tab changes.
+    ref.listen(activeTabProvider, (prev, next) {
+      if (prev != null && prev != next) {
+        setState(() => _exitingTab = prev);
+        _ctrl.forward(from: 0);
+      }
+    });
 
     return AnimatedTheme(
       duration: const Duration(milliseconds: 300),
@@ -53,21 +112,44 @@ class AppShell extends ConsumerWidget {
                       child: Stack(
                         fit: StackFit.expand,
                         children: AppTab.values.map((tab) {
-                          final isActive = tab == activeTab;
-                          return IgnorePointer(
-                            ignoring: !isActive,
-                            child: AnimatedOpacity(
-                              opacity: isActive ? 1.0 : 0.0,
-                              duration: const Duration(milliseconds: 240),
-                              curve: Curves.easeOut,
-                              child: AnimatedSlide(
-                                offset: isActive
-                                    ? Offset.zero
-                                    : const Offset(0.0, 0.018),
-                                duration: const Duration(milliseconds: 240),
-                                curve: Curves.easeOut,
+                          final isActive  = tab == activeTab;
+                          final isExiting = tab == _exitingTab;
+
+                          // Tabs not involved in this transition stay in the
+                          // tree (state preserved) but are invisible.
+                          if (!isActive && !isExiting) {
+                            return IgnorePointer(
+                              child: Opacity(
+                                opacity: 0,
                                 child: _screenFor(tab),
                               ),
+                            );
+                          }
+
+                          // Entering tab — fades in and slides up.
+                          if (isActive) {
+                            return AnimatedBuilder(
+                              animation: _ctrl,
+                              builder: (_, child) => FadeTransition(
+                                opacity: _enterFade,
+                                child: SlideTransition(
+                                  position: _enterSlide,
+                                  child: child,
+                                ),
+                              ),
+                              child: _screenFor(tab),
+                            );
+                          }
+
+                          // Exiting tab — fades out behind the entering tab.
+                          return IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _ctrl,
+                              builder: (_, child) => FadeTransition(
+                                opacity: _exitFade,
+                                child: child,
+                              ),
+                              child: _screenFor(tab),
                             ),
                           );
                         }).toList(),
@@ -81,17 +163,6 @@ class AppShell extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Widget _screenFor(AppTab tab) {
-    return switch (tab) {
-      AppTab.encode => const EncodeScreen(),
-      AppTab.decode => const DecodeScreen(),
-      AppTab.player => const PlayerScreen(),
-      AppTab.catalog => const CatalogScreen(),
-      AppTab.settings => const SettingsScreen(),
-      AppTab.admin => const AdminScreen(),
-    };
   }
 }
 
