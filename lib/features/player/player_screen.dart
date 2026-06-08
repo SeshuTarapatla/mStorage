@@ -288,8 +288,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, anim) =>
-                  FadeTransition(opacity: anim, child: child),
+              transitionBuilder: (child, anim) {
+                final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+                return FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+                    child: child,
+                  ),
+                );
+              },
               child: _videoPath != null
                   ? _VideoArea(
                       key: const ValueKey('video'),
@@ -962,7 +970,9 @@ class _PortChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -984,6 +994,7 @@ class _PortChip extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

@@ -315,7 +315,11 @@ class _SidebarItem extends StatelessWidget {
             ? palette.primary.withValues(alpha: 0.7)
             : kTextMuted;
 
-    return MouseRegion(
+    return Tooltip(
+      message: label,
+      preferBelow: false,
+      waitDuration: const Duration(milliseconds: 800),
+      child: MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => onHover(true),
       onExit: (_) => onHover(false),
@@ -387,6 +391,7 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

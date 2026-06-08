@@ -600,7 +600,10 @@ class _SlideshowPageState extends State<_SlideshowPage> {
   @override
   Widget build(BuildContext context) {
     final crop = _cropRect;
-    final hasCrop = crop != null && crop != Rect.largest;
+    // Only apply crop-and-zoom for landscape images; portrait posters in a
+    // landscape container must use contain — the _croppedImage math assumes
+    // image and container share the same aspect ratio (BoxFit.fill would stretch).
+    final hasCrop = crop != null && crop != Rect.largest && _isLandscape;
     final foregroundFit = _isLandscape ? BoxFit.cover : BoxFit.contain;
 
     return Stack(

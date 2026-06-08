@@ -427,6 +427,7 @@ class _DecodeButtonState extends State<_DecodeButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
