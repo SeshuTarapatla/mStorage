@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/tab_colors.dart';
 import '../../../core/util/key_injector.dart';
@@ -18,12 +20,36 @@ class WebViewOverlay extends StatefulWidget {
 
   @override
   State<WebViewOverlay> createState() => _WebViewOverlayState();
+
+  // Shared WebView2 environment with a user-writable data folder.
+  // Without this, WebView2 defaults to creating its data folder next to the
+  // exe — which silently fails when the app is installed under Program Files.
+  static WebViewEnvironment? _cachedEnv;
+  static Future<WebViewEnvironment>? _envFuture;
+
+  static Future<WebViewEnvironment> _environment() {
+    if (_cachedEnv != null) return Future.value(_cachedEnv);
+    return _envFuture ??= _createEnvironment();
+  }
+
+  static Future<WebViewEnvironment> _createEnvironment() async {
+    final dir = await getApplicationSupportDirectory();
+    final env = await WebViewEnvironment.create(
+      settings: WebViewEnvironmentSettings(
+        userDataFolder: p.join(dir.path, 'WebView2'),
+      ),
+    );
+    _cachedEnv = env;
+    return env;
+  }
 }
 
 class _WebViewOverlayState extends State<WebViewOverlay> {
   InAppWebViewController? _controller;
   String _currentUrl = '';
   bool _loading = true;
+  WebViewEnvironment? _webViewEnvironment;
+  bool _envReady = false;
 
   static const _videoExts = {'.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v'};
 
@@ -42,25 +68,43 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
   window.__mdInstalled = true;
 
   function signalDownloadClick() {
-    try {
-      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('mDownloadClick');
-      }
-    } catch (e) {}
+    try { window.flutter_inappwebview.callHandler('mDownloadClick'); } catch(e) {}
   }
 
-  // ── clicks on the Download menu item ─────────────────────────────────────
+  function isDownloadItem(el) {
+    if (!el || !el.getAttribute) return false;
+    var role = el.getAttribute('role') || '';
+    if (role !== 'menuitem' && role !== 'option') return false;
+    var txt = ((el.innerText || el.textContent || '') + ' ' +
+               (el.getAttribute('aria-label') || '')).toLowerCase();
+    return txt.indexOf('download') !== -1 && txt.length < 100;
+  }
+
+  // Attach a click listener directly to any Download menu item the moment
+  // it appears in the DOM — more reliable than event delegation alone.
+  new MutationObserver(function(muts) {
+    muts.forEach(function(m) {
+      m.addedNodes.forEach(function(n) {
+        if (n.nodeType !== 1) return;
+        var candidates = [];
+        if (isDownloadItem(n)) candidates.push(n);
+        try {
+          n.querySelectorAll('[role="menuitem"],[role="option"]').forEach(function(e) {
+            if (isDownloadItem(e)) candidates.push(e);
+          });
+        } catch(_) {}
+        candidates.forEach(function(el) {
+          el.addEventListener('click', signalDownloadClick);
+        });
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  // Fallback: capture-phase delegation in case MutationObserver misses it.
   document.addEventListener('click', function(e) {
     var el = e.target;
     while (el && el !== document) {
-      if (el.getAttribute) {
-        var role = el.getAttribute('role') || '';
-        var txt  = (el.textContent || '').trim().slice(0, 20).toLowerCase();
-        if ((role === 'menuitem' || role === 'option') && txt.indexOf('download') !== -1) {
-          signalDownloadClick();
-          break;
-        }
-      }
+      if (isDownloadItem(el)) { signalDownloadClick(); return; }
       el = el.parentElement;
     }
   }, true);
@@ -71,6 +115,14 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
   void initState() {
     super.initState();
     _currentUrl = widget.url;
+    WebViewOverlay._environment().then(
+      (env) {
+        if (mounted) setState(() { _webViewEnvironment = env; _envReady = true; });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _envReady = true);
+      },
+    );
   }
 
   bool _isVideoUrl(String url) {
@@ -102,24 +154,6 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
     widget.onDownloadRequested(url, filename);
   }
 
-  Future<void> _handleGoldenDownload() async {
-    String url = _currentUrl;
-    try {
-      final result = await _controller?.evaluateJavascript(source: '''
-        (function(){
-          var v = document.querySelector('video');
-          if (v && v.src && v.src.startsWith('http')) return v.src;
-          var s = document.querySelector('video source');
-          if (s && s.src && s.src.startsWith('http')) return s.src;
-          return '';
-        })()
-      ''');
-      final extracted = (result?.toString() ?? '').replaceAll('"', '').trim();
-      if (extracted.isNotEmpty && extracted != 'null') url = extracted;
-    } catch (_) {}
-    _triggerDownload(url);
-  }
-
   @override
   Widget build(BuildContext context) {
     final palette = AppTab.catalog.palette;
@@ -141,13 +175,16 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
               onClose: () => Navigator.of(context).pop(),
               onBack: () => _controller?.goBack(),
               onRefresh: () => _controller?.reload(),
-              onDownload: _handleGoldenDownload,
             ),
             Expanded(
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(bottom: Radius.circular(12)),
-                child: InAppWebView(
+                child: !_envReady
+                    ? Center(child: CircularProgressIndicator(color: palette.primary))
+                    : Stack(children: [
+                  InAppWebView(
+                  webViewEnvironment: _webViewEnvironment,
                   initialUrlRequest: URLRequest(url: WebUri(widget.url)),
                   initialSettings: InAppWebViewSettings(
                     useOnDownloadStart: true,
@@ -161,7 +198,7 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
                     c.addJavaScriptHandler(
                       handlerName: 'mDownloadClick',
                       callback: (args) {
-                        KeyInjector.sendShiftD();
+                        Future.delayed(const Duration(milliseconds: 150), KeyInjector.sendShiftD);
                         return null;
                       },
                     );
@@ -223,6 +260,12 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
                     );
                   },
                 ),
+                  if (_loading)
+                    Container(
+                      color: kBgColor,
+                      child: Center(child: CircularProgressIndicator(color: palette.primary)),
+                    ),
+                  ]),
               ),
             ),
           ],
@@ -242,7 +285,6 @@ class _BrowserBar extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onBack;
   final VoidCallback onRefresh;
-  final VoidCallback onDownload;
 
   const _BrowserBar({
     required this.title,
@@ -252,7 +294,6 @@ class _BrowserBar extends StatelessWidget {
     required this.onClose,
     required this.onBack,
     required this.onRefresh,
-    required this.onDownload,
   });
 
   @override
@@ -290,15 +331,6 @@ class _BrowserBar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: 'Download via app',
-            child: _BarButton(
-              icon: Icons.download_rounded,
-              onTap: onDownload,
-              color: palette.primary,
-            ),
-          ),
           _BarButton(icon: Icons.close_rounded, onTap: onClose),
         ],
       ),
@@ -309,8 +341,7 @@ class _BrowserBar extends StatelessWidget {
 class _BarButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final Color? color;
-  const _BarButton({required this.icon, required this.onTap, this.color});
+  const _BarButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -319,7 +350,7 @@ class _BarButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.all(6),
-        child: Icon(icon, size: 18, color: color ?? kTextMuted),
+        child: Icon(icon, size: 18, color: kTextMuted),
       ),
     );
   }
