@@ -199,28 +199,30 @@ class ImdbService {
     } catch (_) {}
   }
 
-  /// Fetches image URLs for [imdbId] directly from the API (no cache).
-  /// [page] is 0-indexed; the API caps pageSize at 50.
-  Future<List<String>> fetchImagesUncached(String imdbId,
-      {int count = 20, int page = 0}) async {
+  /// Fetches a page of image URLs for [imdbId].
+  /// Pass [pageToken] from a previous response to get the next page.
+  /// Returns images and the next page token (null = no more pages).
+  Future<({List<String> images, String? nextPageToken})> fetchImagesUncached(
+      String imdbId, {int pageSize = 20, String? pageToken}) async {
     try {
+      var url = '$_baseUrl/titles/$imdbId/images?pageSize=$pageSize';
+      if (pageToken != null) url += '&pageToken=${Uri.encodeQueryComponent(pageToken)}';
       final resp = await http
-          .get(Uri.parse('$_baseUrl/titles/$imdbId/images?pageSize=$count&page=$page'),
-              headers: {'Accept': 'application/json'})
+          .get(Uri.parse(url), headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
-      if (resp.statusCode != 200) return [];
-      final body = jsonDecode(resp.body);
-      final list = body is List
-          ? body
-          : (body['images'] as List<dynamic>? ?? []);
-      return list
+      if (resp.statusCode != 200) return (images: <String>[], nextPageToken: null);
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final list = (body['images'] as List<dynamic>? ?? []);
+      final images = list
           .map((item) => item is String
               ? item
               : (item as Map<String, dynamic>)['url']?.toString() ?? '')
           .where((u) => u.isNotEmpty)
           .toList();
+      final next = body['nextPageToken'] as String?;
+      return (images: images, nextPageToken: next?.isEmpty == true ? null : next);
     } catch (_) {
-      return [];
+      return (images: <String>[], nextPageToken: null);
     }
   }
 

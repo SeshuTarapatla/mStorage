@@ -128,7 +128,9 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
   // ── CSV → entries pipeline (shared by cached and fresh paths) ─────────────
 
   Future<List<CatalogEntry>> _buildEntries(String csvBody) async {
-    final rows = const CsvToListConverter(eol: '\n').convert(csvBody);
+    // Normalize CRLF → LF so the parser works regardless of what Google returns.
+    final normalized = csvBody.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final rows = const CsvToListConverter(eol: '\n').convert(normalized);
     if (rows.length < 2) return [];
 
     final headers = {
@@ -186,27 +188,29 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     final csvUrl =
         'https://docs.google.com/spreadsheets/d/$sheetId/export?format=csv&gid=0';
 
-    // Wipe all caches so everything is re-fetched from the network.
     if (forceRefresh) {
-      await Future.wait([
+      // Clear all caches in the background — don't wait on them, and don't
+      // read the disk cache below (the unawaited save from a prior load can
+      // race with the delete and recreate a stale file before we read it).
+      unawaited(Future.wait([
         _clearCsvCache(sheetId),
         ImdbService().clearCache(),
         CatalogCacheManager.instance.emptyCache(),
-      ]);
-    }
+      ]));
+    } else {
+      // Serve from disk cache immediately if available.
+      final cached = await _loadCsvCache(sheetId);
+      if (cached != null) {
+        final entries = await _buildEntries(cached.body);
+        if (mounted) state = CatalogLoaded(entries);
 
-    // Serve from disk cache immediately if available.
-    final cached = await _loadCsvCache(sheetId);
-    if (cached != null) {
-      final entries = await _buildEntries(cached.body);
-      if (mounted) state = CatalogLoaded(entries);
+        final age = DateTime.now().difference(cached.fetchedAt);
+        if (age < _kCsvCacheTtl) return; // fresh enough — skip network
 
-      final age = DateTime.now().difference(cached.fetchedAt);
-      if (age < _kCsvCacheTtl) return; // fresh enough — skip network
-
-      // Stale: refresh silently in the background.
-      _silentRefresh(sheetId, csvUrl, cached.body);
-      return;
+        // Stale: refresh silently in the background.
+        _silentRefresh(sheetId, csvUrl, cached.body);
+        return;
+      }
     }
 
     // No cache — fetch fresh (show loading until done).

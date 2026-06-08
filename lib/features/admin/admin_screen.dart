@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,14 +7,14 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
 import '../catalog/imdb_service.dart';
 import '../catalog/models/imdb_data.dart';
+import '../catalog/models/sheet_schema.dart';
 
 final _adminPalette = AppTab.admin.palette;
 
 // Amber badge for top-4 slide picks.
 const _kTop4Color = Color(0xFFF59E0B);
 
-// none = not in queue; inQueue = selected pos 5+; top4 = positions 1-4.
-enum _ImgState { none, inQueue, top4 }
+
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -26,38 +27,46 @@ class _AdminScreenState extends State<AdminScreen> {
   final _imdbIdCtrl = TextEditingController();
 
   bool _fetching = false;
-  bool _loadingMore = false;
   String? _error;
   ImdbData? _data;
 
   List<String> _genres = [];
   List<String> _tags = [];
-  final _tagInputCtrl = TextEditingController();
-  final _tagFocusNode = FocusNode();
+  final _tagInputCtrl   = TextEditingController();
+  final _tagFocusNode   = FocusNode();
+  final _genreInputCtrl = TextEditingController();
+  final _genreFocusNode = FocusNode();
 
-  // All images in API order.
+  // ── Extra sheet fields (not from IMDB) ───────────────────────────────────
+  final _videoUrlCtrl = TextEditingController();
+  final _languageCtrl = TextEditingController();
+  final _sizeMbCtrl   = TextEditingController();
+  bool _encoded = false;
+  bool _show    = true;
+
+  // All images fetched from API (up to 100).
   List<String> _allImages = [];
 
   // Ordered preference queue — front = highest priority.
   // Positions 0-3 are slide_images (amber star); 4+ are cyan border.
   List<String> _selected = [];
 
-  int _imagePage = 0;
-  bool _hasMoreImages = false;
+  // Cursor for the next images page; null = no more pages available.
+  String? _nextPageToken;
+  // True while a "Load more" or paste-enrichment API call is in flight.
+  bool _loadingMore = false;
 
-  late final TextEditingController _yearCtrl;
-  late final TextEditingController _monthCtrl;
-  late final TextEditingController _dayCtrl;
+  // Inline paste-validation error; auto-clears after 3 s.
+  String? _pasteError;
+  Timer?  _pasteErrorTimer;
+
+  int? _selectedYear;
+  int  _selectedMonth = 1;
+  int  _selectedDay   = 1;
 
   @override
   void initState() {
     super.initState();
-    _yearCtrl  = TextEditingController();
-    _monthCtrl = TextEditingController(text: '01');
-    _dayCtrl   = TextEditingController(text: '01');
-    for (final c in [_yearCtrl, _monthCtrl, _dayCtrl]) {
-      c.addListener(() => setState(() {}));
-    }
   }
 
   @override
@@ -65,37 +74,41 @@ class _AdminScreenState extends State<AdminScreen> {
     _imdbIdCtrl.dispose();
     _tagInputCtrl.dispose();
     _tagFocusNode.dispose();
-    _yearCtrl.dispose();
-    _monthCtrl.dispose();
-    _dayCtrl.dispose();
+    _genreInputCtrl.dispose();
+    _genreFocusNode.dispose();
+    _videoUrlCtrl.dispose();
+    _languageCtrl.dispose();
+    _sizeMbCtrl.dispose();
+    _pasteErrorTimer?.cancel();
     super.dispose();
+  }
+
+  void _showPasteError(String msg) {
+    _pasteErrorTimer?.cancel();
+    setState(() => _pasteError = msg);
+    _pasteErrorTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _pasteError = null);
+    });
   }
 
   // ── Selection helpers ─────────────────────────────────────────────────────
 
-  _ImgState _stateOf(String url) {
-    final idx = _selected.indexOf(url);
-    if (idx == -1) return _ImgState.none;
-    return idx < 4 ? _ImgState.top4 : _ImgState.inQueue;
-  }
-
-  // Left click: unselected → add to front (becomes top pick); selected → remove.
+  // Click: unselected → append to queue; selected → remove.
   void _toggleImage(String url) {
     setState(() {
       if (_selected.contains(url)) {
         _selected.remove(url);
       } else {
-        _selected.insert(0, url);
+        _selected.add(url);
       }
     });
   }
 
-  // Right-click: always remove from queue.
   void _removeImage(String url) {
     setState(() => _selected.remove(url));
   }
 
-  // Display order: selected first (queue order), then unselected API images.
+  // Selected first (queue order), then all remaining unselected API images.
   List<String> get _displayImages {
     final selectedSet = _selected.toSet();
     return [
@@ -117,8 +130,11 @@ class _AdminScreenState extends State<AdminScreen> {
       _tags = [];
       _allImages = [];
       _selected = [];
-      _imagePage = 0;
-      _hasMoreImages = false;
+      _videoUrlCtrl.clear();
+      _languageCtrl.clear();
+      _sizeMbCtrl.clear();
+      _encoded = false;
+      _show = true;
     });
 
     try {
@@ -133,21 +149,19 @@ class _AdminScreenState extends State<AdminScreen> {
         return;
       }
 
-      final images = await ImdbService().fetchImagesUncached(id, count: 20);
+      final page1 = await ImdbService().fetchImagesUncached(id);
       if (!mounted) return;
-
-      _yearCtrl.text  = data.releaseDate?.year != null ? '${data.releaseDate!.year}' : '';
-      _monthCtrl.text = '01';
-      _dayCtrl.text   = '01';
 
       setState(() {
         _data = data;
         _genres = List<String>.from(data.genres);
-        _allImages = images;
-        // Pre-select first 4 (or all if fewer than 4).
-        _selected = images.take(4).toList();
-        _hasMoreImages = images.length >= 20;
+        _allImages = page1.images;
+        _selected = page1.images.take(4).toList();
+        _nextPageToken = page1.nextPageToken;
         _fetching = false;
+        _selectedYear  = data.releaseDate?.year;
+        _selectedMonth = data.releaseDate?.month ?? 1;
+        _selectedDay   = data.releaseDate?.day ?? 1;
       });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _fetching = false; });
@@ -156,18 +170,151 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _loadMoreImages() async {
     final id = _imdbIdCtrl.text.trim();
+    if (id.isEmpty || _loadingMore || _nextPageToken == null) return;
+    final token = _nextPageToken!;
     setState(() => _loadingMore = true);
-    _imagePage++;
-    final images = await ImdbService()
-        .fetchImagesUncached(id, count: 20, page: _imagePage);
-    if (!mounted) return;
-    final existing = _allImages.toSet();
-    final fresh = images.where((u) => !existing.contains(u)).toList();
+    try {
+      final next = await ImdbService().fetchImagesUncached(id, pageToken: token);
+      if (!mounted) return;
+      final existing = _allImages.toSet();
+      final fresh = next.images.where((u) => !existing.contains(u)).toList();
+      setState(() {
+        _allImages = [..._allImages, ...fresh];
+        _nextPageToken = next.nextPageToken;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+
+  // ── Clipboard paste ───────────────────────────────────────────────────────
+
+  static final _imdbIdRe = RegExp(r'^tt\d+$');
+
+  Future<void> _pasteFromClipboard() async {
+    final clipData = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = clipData?.text?.trim() ?? '';
+    if (text.isEmpty) return;
+
+    // Case 1: bare IMDB ID → just fetch.
+    if (_imdbIdRe.hasMatch(text)) {
+      _imdbIdCtrl.text = text;
+      _fetch();
+      return;
+    }
+
+    // Case 3: not a TSV row → reject.
+    if (!text.contains('\t')) {
+      _showPasteError('Invalid clipboard data. Expected an IMDB ID (tt…) or a tab-separated sheet row.');
+      return;
+    }
+
+    // Case 2: tab-separated sheet row → proceed with full paste.
+    final cols = SheetSchema.parseTsv(text);
+
+    final title      = cols[SheetSchema.iTitle];
+    final imdbId     = cols[SheetSchema.iImdbId];
+    final dateStr    = cols[SheetSchema.iDate];
+    final videoUrl   = cols[SheetSchema.iVideoUrl];
+    final posterUrl  = cols[SheetSchema.iPosterUrl];
+    final sizeMb     = cols[SheetSchema.iSizeMb];
+    final language   = cols[SheetSchema.iLanguage];
+    final plot       = cols[SheetSchema.iPlot];
+    final genresRaw  = cols[SheetSchema.iGenres];
+    final tagsRaw    = cols[SheetSchema.iTags];
+    final encodedRaw = cols[SheetSchema.iEncoded].toLowerCase();
+    final showRaw    = cols[SheetSchema.iShow].toLowerCase();
+    final slidesRaw  = cols[SheetSchema.iSlideImages];
+
+    final genres = genresRaw.isEmpty
+        ? <String>[]
+        : genresRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final tags = tagsRaw.isEmpty
+        ? <String>[]
+        : tagsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    // sheet order (pos 1 first); queue needs newest-first so reverse later
+    final slideImages = slidesRaw.isEmpty
+        ? <String>[]
+        : slidesRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+
+    final date = DateTime.tryParse(dateStr);
+
+    // Show clipboard data immediately so the UI is responsive.
     setState(() {
-      if (fresh.isNotEmpty) _allImages = [..._allImages, ...fresh];
-      _hasMoreImages = images.length >= 20 && fresh.isNotEmpty;
-      _loadingMore = false;
+      _imdbIdCtrl.text   = imdbId;
+      _videoUrlCtrl.text = videoUrl;
+      _languageCtrl.text = language;
+      _sizeMbCtrl.text   = sizeMb;
+      _encoded = encodedRaw == 'true';
+      _show    = showRaw != 'false';
+      _selectedYear  = date?.year;
+      _selectedMonth = date?.month ?? 1;
+      _selectedDay   = date?.day   ?? 1;
+      _genres = genres;
+      _tags   = tags;
+      _data   = ImdbData(
+        id: imdbId, title: title, plot: plot, genres: genres,
+        releaseDate: date, posterUrl: posterUrl,
+        rating: null, voteCount: null, runtimeSeconds: null,
+        stars: const [], certificate: null,
+      );
+      _allImages     = List<String>.from(slideImages);
+      _selected      = List<String>.from(slideImages);
+      _nextPageToken = null;
+      // _loadingMore spinner shows while we enrich from API below
+      _loadingMore   = imdbId.isNotEmpty;
+      _fetching     = false;
+      _error        = null;
     });
+
+    if (imdbId.isEmpty) return;
+
+    // Enrich: fetch metadata + fresh images in parallel; clipboard wins on conflicts.
+    try {
+      final results = await Future.wait([
+        ImdbService().resolve([imdbId]),
+        ImdbService().fetchImagesUncached(imdbId),
+      ]);
+      if (!mounted) return;
+
+      final meta    = (results[0] as Map<String, ImdbData>)[imdbId];
+      final page1   = results[1] as ({List<String> images, String? nextPageToken});
+      final apiImgs = page1.images;
+
+      // Clipboard values take priority; API fills any gaps.
+      final mergedPosterUrl = posterUrl.isNotEmpty ? posterUrl : (meta?.posterUrl ?? '');
+      final mergedPlot      = plot.isNotEmpty      ? plot      : (meta?.plot ?? '');
+      final mergedGenres    = genres.isNotEmpty    ? genres    : List<String>.from(meta?.genres ?? []);
+      final mergedDate      = date ?? meta?.releaseDate;
+      final mergedTitle     = title.isNotEmpty     ? title     : (meta?.title ?? '');
+
+      // Image pool: API images first, then any pasted slides not already in pool.
+      final apiSet     = apiImgs.toSet();
+      final extraSlides = slideImages.where((u) => !apiSet.contains(u)).toList();
+      final mergedImages = [...apiImgs, ...extraSlides];
+
+      setState(() {
+        _data = ImdbData(
+          id: imdbId, title: mergedTitle, plot: mergedPlot,
+          genres: mergedGenres, releaseDate: mergedDate, posterUrl: mergedPosterUrl,
+          rating: meta?.rating, voteCount: meta?.voteCount,
+          runtimeSeconds: meta?.runtimeSeconds,
+          stars: meta?.stars ?? const [], certificate: meta?.certificate,
+        );
+        _genres        = mergedGenres;
+        _selectedYear  = mergedDate?.year  ?? _selectedYear;
+        _selectedMonth = mergedDate?.month ?? _selectedMonth;
+        _selectedDay   = mergedDate?.day   ?? _selectedDay;
+        _allImages     = mergedImages;
+        _selected      = List<String>.from(slideImages);
+        _nextPageToken = page1.nextPageToken;
+        _loadingMore   = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -191,11 +338,10 @@ class _AdminScreenState extends State<AdminScreen> {
   void _copy(String text) => Clipboard.setData(ClipboardData(text: text));
 
   String get _dateResult {
-    final y = _yearCtrl.text.trim();
-    if (y.isEmpty) return '';
-    final m = _monthCtrl.text.trim().padLeft(2, '0');
-    final d = _dayCtrl.text.trim().padLeft(2, '0');
-    return '$y-$m-$d';
+    if (_selectedYear == null) return '';
+    final m = _selectedMonth.toString().padLeft(2, '0');
+    final d = _selectedDay.toString().padLeft(2, '0');
+    return '$_selectedYear-$m-$d';
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -208,6 +354,37 @@ class _AdminScreenState extends State<AdminScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: _pasteError == null
+                ? const SizedBox.shrink()
+                : Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _adminPalette.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _adminPalette.primary.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 15, color: _adminPalette.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _pasteError!,
+                            style: TextStyle(fontSize: 12, color: _adminPalette.secondary),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () { _pasteErrorTimer?.cancel(); setState(() => _pasteError = null); },
+                          child: Icon(Icons.close_rounded, size: 14, color: _adminPalette.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
           const SizedBox(height: 20),
           if (_fetching)
             Expanded(
@@ -261,6 +438,8 @@ class _AdminScreenState extends State<AdminScreen> {
                     const SizedBox(height: 24),
                     _buildTagsEditor(),
                     const SizedBox(height: 24),
+                    _buildRowExtras(),
+                    const SizedBox(height: 24),
                     _buildImagePicker(),
                     const SizedBox(height: 24),
                     _buildResults(),
@@ -313,6 +492,22 @@ class _AdminScreenState extends State<AdminScreen> {
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
             onSubmitted: (_) => _fetch(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'Paste row from clipboard',
+          child: IconButton(
+            onPressed: _pasteFromClipboard,
+            icon: const Icon(Icons.content_paste_rounded, size: 18),
+            style: IconButton.styleFrom(
+              foregroundColor: kTextSecondary,
+              backgroundColor: kSurfaceColor,
+              side: BorderSide(color: kBorderColor),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.all(12),
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -403,7 +598,23 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // ── Date editor ───────────────────────────────────────────────────────────
 
+  static const _kMonths = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  static List<int> _daysInMonth(int year, int month) {
+    final count = DateUtils.getDaysInMonth(year, month);
+    return List.generate(count, (i) => i + 1);
+  }
+
   Widget _buildDateEditor() {
+    final currentYear = DateTime.now().year;
+    final years = List.generate(currentYear - 1899, (i) => currentYear - i);
+    final days = _daysInMonth(_selectedYear ?? currentYear, _selectedMonth);
+    // Clamp day if month/year change reduces days (e.g. Feb 31 → Feb 28).
+    final clampedDay = _selectedDay.clamp(1, days.last);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -414,20 +625,59 @@ class _AdminScreenState extends State<AdminScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
-            _DateField(controller: _yearCtrl,  label: 'Year',  width: 80, hint: 'YYYY', maxLength: 4),
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
+            _DateDropdown<int>(
+              label: 'Year',
+              value: _selectedYear,
+              items: years,
+              itemLabel: (y) => '$y',
+              hint: 'YYYY',
+              width: 100,
+              palette: _adminPalette,
+              onChanged: (v) => setState(() {
+                _selectedYear = v;
+                _selectedDay  = _selectedDay.clamp(
+                    1, _daysInMonth(v ?? currentYear, _selectedMonth).last);
+              }),
+            ),
+            const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Text('–', style: TextStyle(color: kTextMuted))),
-            _DateField(controller: _monthCtrl, label: 'Month', width: 58, hint: 'MM',   maxLength: 2),
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
+            _DateDropdown<int>(
+              label: 'Month',
+              value: _selectedMonth,
+              items: List.generate(12, (i) => i + 1),
+              itemLabel: (m) => _kMonths[m - 1],
+              hint: 'Month',
+              width: 140,
+              palette: _adminPalette,
+              onChanged: (v) => setState(() {
+                _selectedMonth = v ?? 1;
+                _selectedDay   = clampedDay.clamp(
+                    1, _daysInMonth(_selectedYear ?? currentYear, v ?? 1).last);
+              }),
+            ),
+            const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Text('–', style: TextStyle(color: kTextMuted))),
-            _DateField(controller: _dayCtrl,   label: 'Day',   width: 58, hint: 'DD',   maxLength: 2),
+            _DateDropdown<int>(
+              label: 'Day',
+              value: clampedDay,
+              items: days,
+              itemLabel: (d) => '$d',
+              hint: 'DD',
+              width: 76,
+              palette: _adminPalette,
+              onChanged: (v) => setState(() => _selectedDay = v ?? 1),
+            ),
             const SizedBox(width: 12),
             if (_dateResult.isNotEmpty)
-              Text(_dateResult,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _adminPalette.primary,
-                      fontWeight: FontWeight.w500)),
+              Text(
+                _dateResult,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: _adminPalette.primary,
+                    fontWeight: FontWeight.w500),
+              ),
           ],
         ),
       ],
@@ -435,6 +685,18 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   // ── Genre editor ──────────────────────────────────────────────────────────
+
+  void _addGenre(String value) {
+    final genre = value.trim();
+    if (genre.isEmpty || _genres.contains(genre)) {
+      _genreInputCtrl.clear();
+      _genreFocusNode.requestFocus();
+      return;
+    }
+    setState(() => _genres.add(genre));
+    _genreInputCtrl.clear();
+    _genreFocusNode.requestFocus();
+  }
 
   Widget _buildGenreEditor() {
     return Column(
@@ -445,10 +707,49 @@ class _AdminScreenState extends State<AdminScreen> {
           subtitle: 'Drag to reorder — first item shows as primary genre',
         ),
         const SizedBox(height: 8),
-        if (_genres.isEmpty)
-          Text('No genres returned by API',
-              style: TextStyle(fontSize: 12, color: kTextMuted))
-        else
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _genreInputCtrl,
+                focusNode: _genreFocusNode,
+                style: TextStyle(fontSize: 13, color: kTextPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Add a genre…',
+                  hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
+                  filled: true,
+                  fillColor: kSurfaceColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: kBorderColor)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: kBorderColor)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: _adminPalette.primary)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                onSubmitted: _addGenre,
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: () => _addGenre(_genreInputCtrl.text),
+              style: FilledButton.styleFrom(
+                backgroundColor: _adminPalette.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+        if (_genres.isNotEmpty) ...[
+          const SizedBox(height: 8),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: _genres.length * 44.0 + 4),
             child: ReorderableListView.builder(
@@ -467,9 +768,11 @@ class _AdminScreenState extends State<AdminScreen> {
                 genre: _genres[i],
                 index: i,
                 isPrimary: i == 0,
+                onRemove: () => setState(() => _genres.removeAt(i)),
               ),
             ),
           ),
+        ],
       ],
     );
   }
@@ -557,168 +860,194 @@ class _AdminScreenState extends State<AdminScreen> {
   // ── Image picker ──────────────────────────────────────────────────────────
 
   Widget _buildImagePicker() {
-    final display = _displayImages;
-    final top4Count = _selected.length.clamp(0, 4);
+    final selectedSet = _selected.toSet();
+    final unselected  = _allImages.where((u) => !selectedSet.contains(u)).toList();
+    final top4Count   = _selected.length.clamp(0, 4);
+
+    // Shared thumbnail image widget.
+    Widget thumb(String url) => ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox.expand(
+        child: CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          cacheManager: CatalogCacheManager.instance,
+          errorWidget: (_, _, _) => Container(
+            color: kSurface2Color,
+            child: const Icon(Icons.broken_image_rounded, size: 24, color: kTextMuted),
+          ),
+        ),
+      ),
+    );
+
+    // Zoom icon overlay.
+    Widget zoomBtn(int displayIdx) => Positioned(
+      bottom: 4, left: 0, right: 0,
+      child: Center(
+        child: GestureDetector(
+          onTap: () => _showImagePreview(displayIdx),
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: const Icon(Icons.zoom_in_rounded, size: 12, color: Colors.white70),
+          ),
+        ),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Header ───────────────────────────────────────────────────────────
         Row(
           children: [
             _SectionHeader(
               label: 'Slide Images',
-              subtitle: 'Click to select/deselect  •  zoom to preview',
+              subtitle: 'Long-press selected to drag & reorder  •  click pool to add  •  click selected to remove',
             ),
             const SizedBox(width: 12),
             ...List.generate(4, (i) => Container(
-                  width: 10, height: 10,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: i < top4Count ? _kTop4Color : kBorderColor,
-                  ),
-                )),
+              width: 10, height: 10,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: i < top4Count ? _kTop4Color : kBorderColor,
+              ),
+            )),
             const SizedBox(width: 6),
             Text('${_selected.length} selected',
                 style: TextStyle(fontSize: 11, color: kTextMuted)),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Click → add to top of queue  •  amber ★ = top 4 slide picks  •  '
-          'cyan = in queue  •  click again to remove  •  right-click → remove',
-          style: TextStyle(fontSize: 11, color: kTextMuted),
-        ),
+
+        // ── Selected (drag-and-drop reorderable) ─────────────────────────────
+        if (_selected.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _selected.asMap().entries.map((e) {
+              final idx    = e.key;
+              final url    = e.value;
+              final isSlide = idx < 4;
+              final badgeColor = isSlide ? _kTop4Color : _adminPalette.primary.withValues(alpha: 0.85);
+              final badgeSize  = isSlide ? 22.0 : 18.0;
+              final badgeFontSize = isSlide ? 11.0 : 9.0;
+
+              final tile = AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 110, height: 82,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(
+                    color: isSlide ? _kTop4Color : _adminPalette.primary,
+                    width: 2.5,
+                  ),
+                ),
+                child: Stack(children: [
+                  thumb(url),
+                  Positioned(
+                    top: 5, right: 5,
+                    child: Container(
+                      width: badgeSize, height: badgeSize,
+                      decoration: BoxDecoration(color: badgeColor, shape: BoxShape.circle),
+                      child: Center(child: Text(
+                        '${idx + 1}',
+                        style: TextStyle(fontSize: badgeFontSize, fontWeight: FontWeight.w700, color: Colors.black),
+                      )),
+                    ),
+                  ),
+                  zoomBtn(idx),
+                ]),
+              );
+
+              return LongPressDraggable<String>(
+                data: url,
+                delay: const Duration(milliseconds: 150),
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Opacity(opacity: 0.85, child: SizedBox(width: 110, height: 82, child: tile)),
+                ),
+                childWhenDragging: Opacity(opacity: 0.25, child: tile),
+                child: DragTarget<String>(
+                  onWillAcceptWithDetails: (d) => d.data != url,
+                  onAcceptWithDetails: (d) {
+                    setState(() {
+                      final from = _selected.indexOf(d.data);
+                      final to   = _selected.indexOf(url);
+                      _selected.removeAt(from);
+                      _selected.insert(to, d.data);
+                    });
+                  },
+                  builder: (context, candidates, _) {
+                    final hovering = candidates.isNotEmpty;
+                    return GestureDetector(
+                      onTap: () => _toggleImage(url),
+                      onSecondaryTap: () => _removeImage(url),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: hovering
+                            ? Container(
+                                width: 110, height: 82,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(7),
+                                  border: Border.all(color: Colors.white70, width: 2.5),
+                                  color: Colors.white10,
+                                ),
+                              )
+                            : tile,
+                      ),
+                    );
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+
+        // ── Pool ─────────────────────────────────────────────────────────────
         const SizedBox(height: 12),
-        if (display.isEmpty && !_loadingMore)
+        if (unselected.isEmpty && _selected.isEmpty)
           Text('No images returned by API',
               style: TextStyle(fontSize: 12, color: kTextMuted))
-        else
+        else if (unselected.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              ...display.asMap().entries.map((e) {
-                final i       = e.key;
-                final url     = e.value;
-                final state   = _stateOf(url);
-                final isTop4  = state == _ImgState.top4;
-                final isQueue = state == _ImgState.inQueue;
-                final borderColor = isTop4
-                    ? _kTop4Color
-                    : isQueue
-                        ? _adminPalette.primary
-                        : kBorderColor;
-                final borderWidth = (isTop4 || isQueue) ? 2.5 : 1.0;
-                final queueIdx   = _selected.indexOf(url);
-                final badgeLabel = queueIdx < 4 ? top4Count - queueIdx : queueIdx + 1;
-
+              ...unselected.asMap().entries.map((e) {
+                final poolIdx    = e.key;
+                final url        = e.value;
+                final displayIdx = _selected.length + poolIdx;
                 return GestureDetector(
                   onTap: () => _toggleImage(url),
-                  onSecondaryTap: () => _removeImage(url),
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
-                      width: 110,
-                      height: 82,
+                      width: 110, height: 82,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: borderColor, width: borderWidth),
+                        border: Border.all(color: kBorderColor, width: 1.0),
                       ),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: SizedBox.expand(
-                              child: CachedNetworkImage(
-                                imageUrl: url,
-                                fit: BoxFit.cover,
-                                cacheManager: CatalogCacheManager.instance,
-                                errorWidget: (_, _, _) => Container(
-                                  color: kSurface2Color,
-                                  child: const Icon(Icons.broken_image_rounded,
-                                      size: 24, color: kTextMuted),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Top-4 badge: amber circle with position number
-                          if (isTop4)
-                            Positioned(
-                              top: 5, right: 5,
-                              child: Container(
-                                width: 22, height: 22,
-                                decoration: const BoxDecoration(
-                                  color: _kTop4Color,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$badgeLabel',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.black),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          // Queue badge: small cyan circle with position number
-                          if (isQueue)
-                            Positioned(
-                              top: 5, right: 5,
-                              child: Container(
-                                width: 18, height: 18,
-                                decoration: BoxDecoration(
-                                  color: _adminPalette.primary
-                                      .withValues(alpha: 0.85),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$badgeLabel',
-                                    style: const TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.black),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          // Zoom button
-                          Positioned(
-                            bottom: 4, left: 0, right: 0,
-                            child: Center(
-                              child: GestureDetector(
-                                onTap: () => _showImagePreview(i),
-                                behavior: HitTestBehavior.opaque,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.55),
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: const Icon(Icons.zoom_in_rounded,
-                                      size: 12, color: Colors.white70),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: Stack(children: [
+                        thumb(url),
+                        zoomBtn(displayIdx),
+                      ]),
                     ),
                   ),
                 );
               }),
-              // Load more button
-              if (_hasMoreImages || _loadingMore)
+              // Load more
+              if (_nextPageToken != null || _loadingMore)
                 GestureDetector(
                   onTap: _loadingMore ? null : _loadMoreImages,
                   child: MouseRegion(
-                    cursor: _loadingMore
-                        ? SystemMouseCursors.basic
-                        : SystemMouseCursors.click,
+                    cursor: _loadingMore ? SystemMouseCursors.basic : SystemMouseCursors.click,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       width: 110, height: 82,
@@ -728,23 +1057,16 @@ class _AdminScreenState extends State<AdminScreen> {
                         color: kSurface2Color,
                       ),
                       child: _loadingMore
-                          ? Center(
-                              child: SizedBox(
-                                width: 20, height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: _adminPalette.primary),
-                              ),
-                            )
+                          ? Center(child: SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: _adminPalette.primary),
+                            ))
                           : Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.add_circle_outline_rounded,
-                                    size: 22, color: kTextSecondary),
+                                Icon(Icons.add_circle_outline_rounded, size: 22, color: kTextSecondary),
                                 const SizedBox(height: 4),
-                                Text('Load 20 more',
-                                    style: TextStyle(
-                                        fontSize: 10, color: kTextSecondary)),
+                                Text('Load more', style: TextStyle(fontSize: 10, color: kTextSecondary)),
                               ],
                             ),
                     ),
@@ -756,27 +1078,133 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ── Results ───────────────────────────────────────────────────────────────
+  // ── Row extras ────────────────────────────────────────────────────────────
 
-  Widget _buildResults() {
-    final data = _data!;
-    final fields = [
-      ('title',        data.title),
-      ('imdb_id',      _imdbIdCtrl.text.trim()),
-      ('date',         _dateResult),
-      ('plot',         data.plot),
-      ('genres',       _genres.join(', ')),
-      ('tags',         _tags.join(', ')),
-      ('poster_url',   data.posterUrl),
-      ('slide_images', _selected.take(4).toList().reversed.join(', ')),
-    ];
-
+  Widget _buildRowExtras() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          label: 'Results',
-          subtitle: 'Copy each field to paste into the sheet',
+          label: 'Row extras',
+          subtitle: 'Fields not sourced from IMDB',
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            flex: 3,
+            child: _extrasField(
+                controller: _videoUrlCtrl,
+                hint: 'video_url  (Google Photos album link)'),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _extrasField(
+                controller: _languageCtrl, hint: 'language'),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 90,
+            child: _extrasField(
+                controller: _sizeMbCtrl, hint: 'size_mb'),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          _ToggleChip(
+            label: 'Encoded',
+            value: _encoded,
+            onChanged: (v) => setState(() => _encoded = v),
+            palette: _adminPalette,
+          ),
+          const SizedBox(width: 8),
+          _ToggleChip(
+            label: 'Show',
+            value: _show,
+            onChanged: (v) => setState(() => _show = v),
+            palette: _adminPalette,
+          ),
+        ]),
+      ],
+    );
+  }
+
+  Widget _extrasField({
+    required TextEditingController controller,
+    required String hint,
+  }) =>
+      TextField(
+        controller: controller,
+        style: TextStyle(fontSize: 12, color: kTextPrimary),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(fontSize: 12, color: kTextMuted),
+          filled: true,
+          fillColor: kSurfaceColor,
+          isDense: true,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: _adminPalette.primary)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        ),
+      );
+
+  // ── Results ───────────────────────────────────────────────────────────────
+
+  List<String> get _rowValues {
+    final data = _data!;
+    return [
+      data.title,
+      _imdbIdCtrl.text.trim(),
+      _dateResult,
+      _videoUrlCtrl.text.trim(),
+      data.posterUrl,
+      _sizeMbCtrl.text.trim(),
+      _languageCtrl.text.trim(),
+      data.plot,
+      _genres.join(', '),
+      _tags.join(', '),
+      _encoded ? 'TRUE' : 'FALSE',
+      _show    ? 'TRUE' : 'FALSE',
+      _selected.take(4).join(', '),
+    ];
+  }
+
+  Widget _buildResults() {
+    final values = _rowValues;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _SectionHeader(
+                label: 'Results',
+                subtitle: 'Copy individual fields or the full row',
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => _copy(SheetSchema.buildTsv(values)),
+              icon: const Icon(Icons.table_rows_rounded, size: 14),
+              label: const Text('Copy row'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _adminPalette.primary,
+                foregroundColor: Colors.black,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Container(
@@ -787,14 +1215,12 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           child: Column(
             children: [
-              for (var i = 0; i < fields.length; i++) ...[
+              for (var i = 0; i < SheetSchema.columns.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: kBorderColor),
                 _ResultRow(
-                  label: fields[i].$1,
-                  value: fields[i].$2,
-                  onCopy: fields[i].$2.isNotEmpty
-                      ? () => _copy(fields[i].$2)
-                      : null,
+                  label: SheetSchema.columns[i],
+                  value: values[i],
+                  onCopy: values[i].isNotEmpty ? () => _copy(values[i]) : null,
                 ),
               ],
             ],
@@ -841,10 +1267,10 @@ class _ImageLightboxState extends State<_ImageLightbox> {
     _selected = List<String>.from(widget.selected);
   }
 
-  _ImgState _stateOf(String url) {
+  bool _isSelected(String url) => _selected.contains(url);
+  bool _isTop4(String url) {
     final idx = _selected.indexOf(url);
-    if (idx == -1) return _ImgState.none;
-    return idx < 4 ? _ImgState.top4 : _ImgState.inQueue;
+    return idx >= 0 && idx < 4;
   }
 
   void _navigate(int delta) {
@@ -859,7 +1285,7 @@ class _ImageLightboxState extends State<_ImageLightbox> {
       if (_selected.contains(url)) {
         _selected.remove(url);
       } else {
-        _selected.insert(0, url);
+        _selected.add(url);
       }
     });
   }
@@ -872,12 +1298,13 @@ class _ImageLightboxState extends State<_ImageLightbox> {
 
   @override
   Widget build(BuildContext context) {
-    final url   = widget.images[_currentIndex];
-    final state = _stateOf(url);
+    final url      = widget.images[_currentIndex];
+    final selected = _isSelected(url);
+    final top4     = _isTop4(url);
 
-    final borderColor = state == _ImgState.top4
+    final borderColor = top4
         ? _kTop4Color
-        : state == _ImgState.inQueue
+        : selected
             ? _adminPalette.primary
             : Colors.transparent;
 
@@ -970,7 +1397,7 @@ class _ImageLightboxState extends State<_ImageLightbox> {
                 Text('${_currentIndex + 1} / ${widget.images.length}',
                     style: const TextStyle(fontSize: 13, color: Colors.white54)),
                 const SizedBox(width: 16),
-                _LightboxActionBtn(state: state, onTap: () => _toggle(url)),
+                _LightboxActionBtn(isSelected: selected, isTop4: top4, onTap: () => _toggle(url)),
                 const SizedBox(width: 16),
                 ...List.generate(4, (i) => Container(
                       width: 10, height: 10,
@@ -1004,18 +1431,19 @@ class _ImageLightboxState extends State<_ImageLightbox> {
 }
 
 class _LightboxActionBtn extends StatelessWidget {
-  final _ImgState state;
+  final bool isSelected;
+  final bool isTop4;
   final VoidCallback onTap;
 
-  const _LightboxActionBtn({required this.state, required this.onTap});
+  const _LightboxActionBtn({required this.isSelected, required this.isTop4, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final (icon, label, bg) = switch (state) {
-      _ImgState.none    => (Icons.add_circle_outline_rounded, 'Add to queue', Colors.white24),
-      _ImgState.inQueue => (Icons.check_circle_outline_rounded, 'In queue — click to remove', Colors.white24),
-      _ImgState.top4    => (Icons.star_rounded, 'Top 4 slide pick — click to remove', _kTop4Color),
-    };
+    final (icon, label, bg) = isTop4
+        ? (Icons.star_rounded, 'Slide pick — click to remove', _kTop4Color)
+        : isSelected
+            ? (Icons.check_circle_outline_rounded, 'Selected — click to remove', Colors.white24)
+            : (Icons.add_circle_outline_rounded, 'Add to selection', Colors.white24);
 
     return FilledButton.icon(
       onPressed: onTap,
@@ -1100,37 +1528,39 @@ class _MetaChip extends StatelessWidget {
   }
 }
 
-class _DateField extends StatelessWidget {
-  final TextEditingController controller;
+class _DateDropdown<T> extends StatelessWidget {
   final String label;
-  final double width;
+  final T? value;
+  final List<T> items;
+  final String Function(T) itemLabel;
   final String hint;
-  final int maxLength;
-  const _DateField({
-    required this.controller,
+  final double width;
+  final TabPalette palette;
+  final ValueChanged<T?> onChanged;
+
+  const _DateDropdown({
     required this.label,
-    required this.width,
+    required this.value,
+    required this.items,
+    required this.itemLabel,
     required this.hint,
-    required this.maxLength,
+    required this.width,
+    required this.palette,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasValue = value != null;
     return SizedBox(
       width: width,
-      child: TextField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        maxLength: maxLength,
-        style: TextStyle(fontSize: 13, color: kTextPrimary),
+      child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(fontSize: 11, color: kTextMuted),
-          hintText: hint,
-          hintStyle: TextStyle(fontSize: 12, color: kTextMuted),
-          counterText: '',
           filled: true,
           fillColor: kSurfaceColor,
+          isDense: true,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(7),
               borderSide: BorderSide(color: kBorderColor)),
@@ -1139,9 +1569,33 @@ class _DateField extends StatelessWidget {
               borderSide: BorderSide(color: kBorderColor)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(7),
-              borderSide: BorderSide(color: _adminPalette.primary)),
+              borderSide: BorderSide(color: palette.primary)),
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: value,
+            hint: Text(hint,
+                style: TextStyle(fontSize: 13, color: kTextMuted)),
+            isExpanded: true,
+            isDense: true,
+            dropdownColor: kSurfaceColor,
+            style: TextStyle(
+                fontSize: 13,
+                color: hasValue ? kTextPrimary : kTextMuted),
+            icon: Icon(Icons.expand_more_rounded,
+                size: 16, color: kTextMuted),
+            items: items
+                .map((item) => DropdownMenuItem<T>(
+                      value: item,
+                      child: Text(itemLabel(item),
+                          style: TextStyle(
+                              fontSize: 13, color: kTextPrimary)),
+                    ))
+                .toList(),
+            onChanged: onChanged,
+          ),
         ),
       ),
     );
@@ -1152,11 +1606,13 @@ class _GenreRow extends StatelessWidget {
   final String genre;
   final int index;
   final bool isPrimary;
+  final VoidCallback onRemove;
   const _GenreRow(
       {super.key,
       required this.genre,
       required this.index,
-      required this.isPrimary});
+      required this.isPrimary,
+      required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -1192,7 +1648,7 @@ class _GenreRow extends StatelessWidget {
           ),
           if (isPrimary)
             Container(
-              margin: const EdgeInsets.only(right: 10),
+              margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
                 color: _adminPalette.primary.withValues(alpha: 0.15),
@@ -1203,10 +1659,72 @@ class _GenreRow extends StatelessWidget {
                       fontSize: 10,
                       color: _adminPalette.primary,
                       fontWeight: FontWeight.w600)),
-            )
-          else
-            const SizedBox(width: 10),
+            ),
+          InkWell(
+            onTap: onRemove,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Icon(Icons.close_rounded, size: 14, color: kTextMuted),
+            ),
+          ),
+          const SizedBox(width: 4),
         ],
+      ),
+    );
+  }
+}
+
+class _ToggleChip extends StatelessWidget {
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final TabPalette palette;
+
+  const _ToggleChip({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    required this.palette,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: value
+              ? palette.primary.withValues(alpha: 0.15)
+              : kSurface2Color,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: value
+                ? palette.primary.withValues(alpha: 0.45)
+                : kBorderColor,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              value ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+              size: 14,
+              color: value ? palette.primary : kTextMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: value ? palette.primary : kTextSecondary,
+                fontWeight: value ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

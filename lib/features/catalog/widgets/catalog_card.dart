@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' show max;
 import 'dart:ui' show ImageFilter;
+import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/services/catalog_cache_manager.dart';
@@ -449,6 +451,10 @@ class CatalogCardExpandedState extends State<CatalogCardExpanded> {
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
+// Per-session cache: URL → normalized crop rect (0–1 coordinates).
+// Rect.largest sentinel means "analyzed, no meaningful crop found".
+final _cropRectCache = <String, Rect>{};
+
 class _SlideshowPage extends StatefulWidget {
   final String url;
   const _SlideshowPage({required this.url});
@@ -458,16 +464,22 @@ class _SlideshowPage extends StatefulWidget {
 }
 
 class _SlideshowPageState extends State<_SlideshowPage> {
-  // null = not yet known; defaults to portrait (contain) until resolved.
   bool _isLandscape = false;
+  // null = analysis in progress; Rect.largest = no crop needed.
+  Rect? _cropRect;
 
   @override
   void initState() {
     super.initState();
-    _detectOrientation();
+    _detectOrientationAndCrop();
   }
 
-  void _detectOrientation() {
+  void _detectOrientationAndCrop() {
+    // Return cached result immediately if available.
+    if (_cropRectCache.containsKey(widget.url)) {
+      _cropRect = _cropRectCache[widget.url];
+    }
+
     final provider = CachedNetworkImageProvider(
       widget.url,
       cacheManager: CatalogCacheManager.instance,
@@ -475,26 +487,124 @@ class _SlideshowPageState extends State<_SlideshowPage> {
     final stream = provider.resolve(const ImageConfiguration());
     late ImageStreamListener listener;
     listener = ImageStreamListener(
-      (ImageInfo info, _) {
+      (ImageInfo info, _) async {
         stream.removeListener(listener);
-        if (mounted) {
-          setState(() {
-            _isLandscape = info.image.width > info.image.height;
-          });
-        }
+        final image = info.image;
+        final isLandscape = image.width > image.height;
+
+        // Only run pixel analysis if not already cached.
+        final crop = _cropRectCache.containsKey(widget.url)
+            ? _cropRectCache[widget.url]!
+            : await _detectDarkBorders(widget.url, image);
+
+        if (mounted) setState(() { _isLandscape = isLandscape; _cropRect = crop; });
       },
       onError: (_, _) => stream.removeListener(listener),
     );
     stream.addListener(listener);
   }
 
+  // Scans edge rows/columns for near-black pixels and returns a normalized
+  // content rect. Returns Rect.largest if no meaningful border is detected.
+  static Future<Rect> _detectDarkBorders(String url, ui.Image image) async {
+    const kDarkThreshold  = 20;   // per-channel brightness to call a pixel "dark"
+    const kDarkRowRatio   = 0.90; // fraction of sampled pixels that must be dark
+    const kMinBorderFrac  = 0.02; // ignore borders thinner than 2 % of the dimension
+
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (bytes == null) {
+      _cropRectCache[url] = Rect.largest;
+      return Rect.largest;
+    }
+
+    final w    = image.width;
+    final h    = image.height;
+    final data = bytes.buffer.asUint8List();
+    final xStep = max(1, w ~/ 30); // sample ~30 columns per row scan
+    final yStep = max(1, h ~/ 30); // sample ~30 rows per column scan
+
+    bool isRowDark(int y) {
+      int dark = 0, total = 0;
+      for (var x = 0; x < w; x += xStep) {
+        final i = (y * w + x) * 4;
+        if (data[i] < kDarkThreshold && data[i + 1] < kDarkThreshold && data[i + 2] < kDarkThreshold) dark++;
+        total++;
+      }
+      return dark / total >= kDarkRowRatio;
+    }
+
+    bool isColDark(int x) {
+      int dark = 0, total = 0;
+      for (var y = 0; y < h; y += yStep) {
+        final i = (y * w + x) * 4;
+        if (data[i] < kDarkThreshold && data[i + 1] < kDarkThreshold && data[i + 2] < kDarkThreshold) dark++;
+        total++;
+      }
+      return dark / total >= kDarkRowRatio;
+    }
+
+    int top = 0;
+    while (top < h && isRowDark(top)) { top++; }
+    int bottom = h - 1;
+    while (bottom > top && isRowDark(bottom)) { bottom--; }
+    int left = 0;
+    while (left < w && isColDark(left)) { left++; }
+    int right = w - 1;
+    while (right > left && isColDark(right)) { right--; }
+
+    final lf = left  / w;
+    final tf = top   / h;
+    final rf = (right  + 1) / w;
+    final bf = (bottom + 1) / h;
+
+    // Discard trivially small borders (noise / gradients).
+    final crop = (lf < kMinBorderFrac && tf < kMinBorderFrac &&
+                  rf > 1 - kMinBorderFrac && bf > 1 - kMinBorderFrac)
+        ? Rect.largest
+        : Rect.fromLTRB(lf, tf, rf, bf);
+
+    _cropRectCache[url] = crop;
+    return crop;
+  }
+
+  // Renders [provider] cropped to [crop] (normalized 0–1 rect) via a Positioned
+  // child that is scaled and offset so the content fills the container exactly.
+  Widget _croppedImage(ImageProvider provider, Rect crop) {
+    final cx = (crop.left + crop.right)   / 2;
+    final cy = (crop.top  + crop.bottom)  / 2;
+    final scale = max(1.0 / crop.width, 1.0 / crop.height);
+
+    return LayoutBuilder(builder: (_, constraints) {
+      final w  = constraints.maxWidth;
+      final h  = constraints.maxHeight;
+      final sw = w * scale;
+      final sh = h * scale;
+      return ClipRect(
+        child: SizedBox.expand(
+          child: Stack(children: [
+            Positioned(
+              left:  w / 2 - cx * sw,
+              top:   h / 2 - cy * sh,
+              width:  sw,
+              height: sh,
+              child: Image(image: provider, fit: BoxFit.fill),
+            ),
+          ]),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final crop = _cropRect;
+    final hasCrop = crop != null && crop != Rect.largest;
     final foregroundFit = _isLandscape ? BoxFit.cover : BoxFit.contain;
 
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Blurred background — always cover.
         CachedNetworkImage(
           imageUrl: widget.url,
           cacheManager: CatalogCacheManager.instance,
@@ -507,12 +617,16 @@ class _SlideshowPageState extends State<_SlideshowPage> {
           ),
         ),
         Container(color: Colors.black.withValues(alpha: 0.22)),
+        // Foreground — crop borders if detected, otherwise use normal fit.
         CachedNetworkImage(
           imageUrl: widget.url,
           cacheManager: CatalogCacheManager.instance,
-          fit: foregroundFit,
+          fit: hasCrop ? BoxFit.fill : foregroundFit,
           placeholder: (_, _) => const SizedBox.shrink(),
-          errorWidget: (_, _, _) => const SizedBox.shrink(),
+          errorWidget:  (_, _, _) => const SizedBox.shrink(),
+          imageBuilder: hasCrop
+              ? (_, ip) => _croppedImage(ip, crop)
+              : null,
         ),
       ],
     );
