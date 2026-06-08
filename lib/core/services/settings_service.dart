@@ -1,10 +1,24 @@
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/settings_model.dart';
+
+String _mStorageBase() {
+  final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
+  return p.join(home, 'Videos', 'mStorage');
+}
+
+class AppDirectories {
+  static String get encoded => p.join(_mStorageBase(), 'Encoded');
+  static String get decoded => p.join(_mStorageBase(), 'Decoded');
+  static String get downloaded => p.join(_mStorageBase(), 'Downloaded');
+}
 
 const _kPassword = 'setting_password';
 const _kEncodeOutputDir = 'setting_encode_output_dir';
 const _kDecodeOutputDir = 'setting_decode_output_dir';
+const _kCatalogDownloadDir = 'setting_catalog_download_dir';
 const _kAspectRatio = 'setting_aspect_ratio';
 const _kMaskDuration = 'setting_mask_duration';
 const _kSyncplayPort = 'syncplay_port';
@@ -25,6 +39,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       password: _prefs.getString(_kPassword) ?? '',
       encodeOutputDirectory: _prefs.getString(_kEncodeOutputDir) ?? '',
       decodeOutputDirectory: _prefs.getString(_kDecodeOutputDir) ?? '',
+      catalogDownloadDirectory: _prefs.getString(_kCatalogDownloadDir) ?? '',
       preserveAspectRatio: _prefs.getBool(_kAspectRatio) ?? true,
       maskDurationSeconds: _prefs.getInt(_kMaskDuration) ?? 5,
       syncplayPort: _prefs.getInt(_kSyncplayPort) ?? 8999,
@@ -48,6 +63,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setDecodeOutputDirectory(String value) async {
     state = state.copyWith(decodeOutputDirectory: value);
     await _prefs.setString(_kDecodeOutputDir, value);
+  }
+
+  Future<void> setCatalogDownloadDirectory(String value) async {
+    state = state.copyWith(catalogDownloadDirectory: value);
+    await _prefs.setString(_kCatalogDownloadDir, value);
   }
 
   Future<void> setPreserveAspectRatio(bool value) async {

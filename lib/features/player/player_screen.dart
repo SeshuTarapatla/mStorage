@@ -25,7 +25,13 @@ bool _isVideoFile(String path) =>
 // "Callback invoked after it has been deleted" crash in media_kit's
 // native texture layer.
 final _sharedPlayer = Player();
-final _sharedController = VideoController(_sharedPlayer);
+final _sharedController = VideoController(
+  _sharedPlayer,
+  configuration: const VideoControllerConfiguration(
+    enableHardwareAcceleration: true,
+  ),
+);
+bool _mpvConfigured = false;
 
 class PlayerScreen extends ConsumerStatefulWidget {
   const PlayerScreen({super.key});
@@ -47,6 +53,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   String? _videoPath;
   bool _syncplayFound = false;
   String? _syncplayPath;
+  String? _vlcPath;
 
   // Syncplay process & log
   Process? _syncplayProcess;
@@ -62,6 +69,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _usernameCtrl = TextEditingController(text: settings.syncplayUsername);
     _roomCtrl = TextEditingController(text: settings.syncplayRoom);
     _checkSyncplay();
+    _checkVlc();
+    if (!_mpvConfigured) {
+      _mpvConfigured = true;
+      _configureForHighRes();
+    }
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -117,6 +129,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
     }
+  }
+
+  void _checkVlc() {
+    final paths = [
+      r'C:\Program Files\VideoLAN\VLC\vlc.exe',
+      r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe',
+    ];
+    for (final path in paths) {
+      if (File(path).existsSync()) {
+        setState(() => _vlcPath = path);
+        return;
+      }
+    }
+  }
+
+  Future<void> _configureForHighRes() async {
+    try {
+      final native = _sharedPlayer.platform as NativePlayer;
+      // Hardware video decoding — offloads decode to GPU, critical for 4K/60fps.
+      await native.setProperty('hwdec', 'auto');
+      // Larger demux buffer handles high-bitrate 4K without stutter.
+      await native.setProperty('demuxer-max-bytes', '150MiB');
+      await native.setProperty('demuxer-readahead-secs', '20');
+    } catch (_) {}
+  }
+
+  Future<void> _launchVlc() async {
+    if (_vlcPath == null || _videoPath == null) return;
+    _player.pause();
+    await Process.start(_vlcPath!, [_videoPath!]);
   }
 
   Future<void> _openVideo(String path) async {
@@ -246,8 +288,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, anim) =>
-                  FadeTransition(opacity: anim, child: child),
+              transitionBuilder: (child, anim) {
+                final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+                return FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+                    child: child,
+                  ),
+                );
+              },
               child: _videoPath != null
                   ? _VideoArea(
                       key: const ValueKey('video'),
@@ -288,6 +338,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     color: accent,
                     onTap: _pickVideo,
                   ),
+                ),
+                const SizedBox(width: 12),
+                _VlcButton(
+                  enabled: _vlcPath != null && _videoPath != null,
+                  accent: accent,
+                  onTap: _launchVlc,
                 ),
                 const SizedBox(width: 12),
                 _SyncplayButton(
@@ -579,6 +635,89 @@ class _FilenameBar extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 
+class _VlcButton extends StatefulWidget {
+  final bool enabled;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _VlcButton({
+    required this.enabled,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  State<_VlcButton> createState() => _VlcButtonState();
+}
+
+class _VlcButtonState extends State<_VlcButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Subtle orange hue shift toward VLC's brand colour.
+    final color = widget.enabled
+        ? Color.lerp(widget.accent, const Color(0xFFFF6600), 0.22)!
+        : kTextMuted;
+
+    return MouseRegion(
+      cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
+      child: GestureDetector(
+        onTap: widget.enabled ? widget.onTap : null,
+        onTapDown: widget.enabled ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: widget.enabled ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: widget.enabled ? () => setState(() => _pressed = false) : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: widget.enabled
+                  ? LinearGradient(colors: [color, color.withValues(alpha: 0.75)])
+                  : null,
+              color: widget.enabled ? null : kSurface2Color,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: widget.enabled && _hovered
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 3),
+                      )
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.videocam_rounded,
+                    size: 16,
+                    color: widget.enabled ? Colors.white : kTextMuted),
+                const SizedBox(width: 8),
+                Text(
+                  'Open in VLC',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: widget.enabled ? Colors.white : kTextMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 class _SyncplayButton extends StatefulWidget {
   final bool found;
   final bool enabled;
@@ -602,19 +741,29 @@ class _SyncplayButton extends StatefulWidget {
 
 class _SyncplayButtonState extends State<_SyncplayButton> {
   bool _hovered = false;
+  bool _pressed = false;
+
+  bool get _active => widget.running || widget.enabled;
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: _active ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
       child: GestureDetector(
         onTap: widget.running
             ? widget.onStop
             : widget.enabled
                 ? widget.onTap
                 : null,
-        child: AnimatedContainer(
+        onTapDown: _active ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: _active ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: _active ? () => setState(() => _pressed = false) : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           decoration: BoxDecoration(
@@ -666,6 +815,7 @@ class _SyncplayButtonState extends State<_SyncplayButton> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -820,7 +970,9 @@ class _PortChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -842,6 +994,7 @@ class _PortChip extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -951,35 +1104,44 @@ class _SyncplayLogPanel extends StatelessWidget {
               ),
             ),
           ),
-          if (expanded) ...[
-            Divider(height: 1, color: kBorderColor),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                itemCount: logs.length,
-                reverse: true,
-                itemBuilder: (_, i) {
-                  final line = logs[logs.length - 1 - i];
-                  final isErr = line.startsWith('[err]');
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text(
-                      line,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: isErr
-                            ? const Color(0xFFFF6B6B)
-                            : const Color(0xFF8B949E),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            child: expanded
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Divider(height: 1, color: kBorderColor),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          itemCount: logs.length,
+                          reverse: true,
+                          itemBuilder: (_, i) {
+                            final line = logs[logs.length - 1 - i];
+                            final isErr = line.startsWith('[err]');
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                line,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  color: isErr
+                                      ? const Color(0xFFFF6B6B)
+                                      : const Color(0xFF8B949E),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );

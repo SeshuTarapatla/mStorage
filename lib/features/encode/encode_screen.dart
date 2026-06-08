@@ -178,7 +178,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
         ? p.basenameWithoutExtension(_videoPath!)
         : _titleCtrl.text.trim();
     final outDir = settings.encodeOutputDirectory.isEmpty
-        ? p.join(p.dirname(_videoPath!), 'output')
+        ? AppDirectories.encoded
         : settings.encodeOutputDirectory;
 
     await ref.read(encodeProvider.notifier).run(
@@ -448,6 +448,7 @@ class _EncodeButtonState extends State<_EncodeButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

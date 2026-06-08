@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../core/models/decode_config.dart';
+import '../../core/providers/decode_request_provider.dart';
 import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -26,6 +27,19 @@ class DecodeScreen extends ConsumerStatefulWidget {
 class _DecodeScreenState extends ConsumerState<DecodeScreen> {
   final _palette = AppTab.decode.palette;
   String? _videoPath;
+
+  @override
+  void initState() {
+    super.initState();
+    // Read any pending path that was set before this screen was built.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final path = ref.read(decodeOpenRequestProvider);
+      if (path != null && mounted) {
+        setState(() => _videoPath = path);
+        ref.read(decodeOpenRequestProvider.notifier).state = null;
+      }
+    });
+  }
 
   void _onVideoDropped(String path) => setState(() => _videoPath = path);
 
@@ -55,7 +69,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     if (_videoPath == null) return;
     final settings = ref.read(settingsProvider);
     final outDir = settings.decodeOutputDirectory.isEmpty
-        ? p.dirname(_videoPath!)
+        ? AppDirectories.decoded
         : settings.decodeOutputDirectory;
 
     await ref.read(decodeProvider.notifier).run(
@@ -73,6 +87,16 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     final state = ref.watch(decodeProvider);
     final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
+
+    // Consume any file path sent from the Catalog "Decode this" shortcut.
+    ref.listen<String?>(decodeOpenRequestProvider, (_, path) {
+      if (path != null && mounted) {
+        setState(() => _videoPath = path);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(decodeOpenRequestProvider.notifier).state = null;
+        });
+      }
+    });
 
     final customDir = settings.decodeOutputDirectory;
     final displayOutDir = customDir.isNotEmpty
@@ -403,6 +427,7 @@ class _DecodeButtonState extends State<_DecodeButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(

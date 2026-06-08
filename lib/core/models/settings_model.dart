@@ -2,6 +2,7 @@ class AppSettings {
   final String password;
   final String encodeOutputDirectory;
   final String decodeOutputDirectory;
+  final String catalogDownloadDirectory;
   final bool preserveAspectRatio;
   final int maskDurationSeconds;
   final int syncplayPort;
@@ -14,6 +15,7 @@ class AppSettings {
     this.password = '',
     this.encodeOutputDirectory = '',
     this.decodeOutputDirectory = '',
+    this.catalogDownloadDirectory = '',
     this.preserveAspectRatio = true,
     this.maskDurationSeconds = 5,
     this.syncplayPort = 8999,
@@ -27,6 +29,7 @@ class AppSettings {
     String? password,
     String? encodeOutputDirectory,
     String? decodeOutputDirectory,
+    String? catalogDownloadDirectory,
     bool? preserveAspectRatio,
     int? maskDurationSeconds,
     int? syncplayPort,
@@ -41,6 +44,8 @@ class AppSettings {
           encodeOutputDirectory ?? this.encodeOutputDirectory,
       decodeOutputDirectory:
           decodeOutputDirectory ?? this.decodeOutputDirectory,
+      catalogDownloadDirectory:
+          catalogDownloadDirectory ?? this.catalogDownloadDirectory,
       preserveAspectRatio: preserveAspectRatio ?? this.preserveAspectRatio,
       maskDurationSeconds: maskDurationSeconds ?? this.maskDurationSeconds,
       syncplayPort: syncplayPort ?? this.syncplayPort,

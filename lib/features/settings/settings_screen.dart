@@ -1,10 +1,15 @@
+import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/services/catalog_cache_manager.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../catalog/catalog_notifier.dart';
+import '../catalog/imdb_service.dart';
+import '../catalog/widgets/catalog_card.dart';
 import '../shell/widgets/shared_widgets.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -18,6 +23,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _palette = AppTab.settings.palette;
   late TextEditingController _passwordCtrl;
   bool _showPassword = false;
+  String? _cacheMessage;
+  Timer? _cacheMessageTimer;
 
   @override
   void initState() {
@@ -29,7 +36,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void dispose() {
     _passwordCtrl.dispose();
+    _cacheMessageTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _confirmClearCache() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Clear all caches?',
+            style: TextStyle(color: kTextPrimary, fontSize: 16)),
+        content: const Text(
+          'IMDB metadata, image URLs, catalog CSV, and cached poster images will be deleted. App settings are not affected.',
+          style: TextStyle(color: kTextSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: _palette.primary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: _palette.primary),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await Future.wait([
+      ImdbService().clearCache(),
+      CatalogCacheManager.instance.emptyCache(),
+      ref.read(catalogProvider.notifier).clearAllCsvCaches(),
+    ]);
+    clearSlideCropCache();
+    if (!mounted) return;
+    _cacheMessageTimer?.cancel();
+    setState(() => _cacheMessage = 'All caches cleared successfully.');
+    _cacheMessageTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _cacheMessage = null);
+    });
   }
 
   Future<void> _confirmReset() async {
@@ -95,7 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 control: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final tab in [AppTab.encode, AppTab.decode, AppTab.player])
+                    for (final tab in [AppTab.encode, AppTab.decode, AppTab.player, AppTab.catalog])
                       Padding(
                         padding: const EdgeInsets.only(left: 6),
                         child: _ChipButton(
@@ -179,7 +228,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _DirSettingRow(
                 icon: Icons.upload_rounded,
                 title: 'Encode Output',
-                subtitle: 'Defaults to <video folder>/output/',
+                subtitle: 'Where encoded mask MP4 files are saved.',
                 accent: accent,
                 dir: settings.encodeOutputDirectory,
                 onPick: () async {
@@ -195,12 +244,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => ref
                         .read(settingsProvider.notifier)
                         .setEncodeOutputDirectory(''),
-                placeholder: 'Default: <video folder>/output/',
+                placeholder: 'Default: Videos\\mStorage\\Encoded',
               ),
               _DirSettingRow(
                 icon: Icons.download_rounded,
                 title: 'Decode Output',
-                subtitle: 'Defaults to same folder as video',
+                subtitle: 'Where extracted files from decoded videos are saved.',
                 accent: accent,
                 dir: settings.decodeOutputDirectory,
                 onPick: () async {
@@ -216,7 +265,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : () => ref
                         .read(settingsProvider.notifier)
                         .setDecodeOutputDirectory(''),
-                placeholder: 'Default: same folder as video',
+                placeholder: 'Default: Videos\\mStorage\\Decoded',
+              ),
+              _DirSettingRow(
+                icon: Icons.cloud_download_rounded,
+                title: 'Catalog Downloads',
+                subtitle: 'Where videos downloaded from the Catalog are saved.',
+                accent: accent,
+                dir: settings.catalogDownloadDirectory,
+                onPick: () async {
+                  final dir = await FilePicker.platform.getDirectoryPath();
+                  if (dir != null) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setCatalogDownloadDirectory(dir);
+                  }
+                },
+                onClear: settings.catalogDownloadDirectory.isEmpty
+                    ? null
+                    : () => ref
+                        .read(settingsProvider.notifier)
+                        .setCatalogDownloadDirectory(''),
+                placeholder: 'Default: Videos\\mStorage\\Downloaded',
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 120.ms),
@@ -273,6 +343,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // ── Cache ─────────────────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Cache',
+            accent: accent,
+            children: [
+              _SettingRow(
+                icon: Icons.cleaning_services_rounded,
+                title: 'Clear Cache',
+                subtitle:
+                    'Remove cached IMDB data, image URLs, catalog CSV, and poster images.',
+                accent: accent,
+                control: _ActionButton(
+                  label: 'Clear Cache',
+                  accent: accent,
+                  onTap: _confirmClearCache,
+                ),
+              ),
+            ],
+          ).animate().fadeIn(duration: 300.ms, delay: 240.ms),
+
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: _cacheMessage == null
+                ? const SizedBox.shrink()
+                : Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: accent.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_outline_rounded, size: 15, color: accent),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _cacheMessage!,
+                            style: TextStyle(fontSize: 12, color: accent),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            _cacheMessageTimer?.cancel();
+                            setState(() => _cacheMessage = null);
+                          },
+                          child: Icon(Icons.close_rounded, size: 14, color: accent),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+
+          const SizedBox(height: 20),
+
           // ── Danger Zone ──────────────────────────────────────────────────
           _SettingsGroup(
             label: 'Danger Zone',
@@ -290,7 +417,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
             ],
-          ).animate().fadeIn(duration: 300.ms, delay: 240.ms),
+          ).animate().fadeIn(duration: 300.ms, delay: 260.ms),
 
           const SizedBox(height: 32),
 
@@ -309,13 +436,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 2),
                 const Text(
-                  'Flutter · Windows',
-                  style:
-                      TextStyle(fontSize: 11, color: kTextMuted),
+                  'Seshu Tarapatla  ·  Flutter · Windows',
+                  style: TextStyle(fontSize: 11, color: kTextMuted),
                 ),
               ],
             ),
-          ).animate().fadeIn(duration: 300.ms, delay: 280.ms),
+          ).animate().fadeIn(duration: 300.ms, delay: 300.ms),
         ],
       ),
     );
@@ -592,6 +718,62 @@ class _DangerButtonState extends State<_DangerButton> {
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: kDanger,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _ActionButton extends StatefulWidget {
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  State<_ActionButton> createState() => _ActionButtonState();
+}
+
+class _ActionButtonState extends State<_ActionButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.accent;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? c.withValues(alpha: 0.15)
+                : c.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _hovered
+                  ? c.withValues(alpha: 0.6)
+                  : c.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: c,
             ),
           ),
         ),

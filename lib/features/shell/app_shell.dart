@@ -1,108 +1,168 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../core/services/gh_auth_service.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../admin/admin_screen.dart';
 import '../decode/decode_notifier.dart';
 import '../encode/encode_notifier.dart';
 import '../encode/encode_screen.dart';
 import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
+import '../catalog/catalog_screen.dart';
 import '../settings/settings_screen.dart';
 
 // Reads startupTab from already-loaded settings (main() loads before runApp).
 // ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
 final activeTabProvider = StateProvider<AppTab>((ref) {
   final idx = ref.read(settingsProvider).startupTab;
-  return AppTab.values[idx.clamp(0, AppTab.values.length - 1)];
+  // Clamp to public tabs only — admin is the last enum value and not a startup option.
+  return AppTab.values[idx.clamp(0, AppTab.settings.index)];
 });
 
-class AppShell extends ConsumerWidget {
+final ghAuthProvider = FutureProvider<bool>(
+    (ref) => GhAuthService().isAuthorized());
+
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _enterFade;
+  late final Animation<Offset> _enterSlide;
+  late final Animation<double> _exitFade;
+
+  AppTab? _exitingTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    )..value = 1.0; // start complete so first render is instant
+
+    final curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _enterFade  = curved;
+    _enterSlide = Tween<Offset>(
+      begin: const Offset(0, 0.055),
+      end: Offset.zero,
+    ).animate(curved);
+    _exitFade = Tween<double>(begin: 1.0, end: 0.0).animate(curved);
+
+    _ctrl.addStatusListener((s) {
+      if (s == AnimationStatus.completed && mounted) {
+        setState(() => _exitingTab = null);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Widget _screenFor(AppTab tab) => switch (tab) {
+    AppTab.encode   => const EncodeScreen(),
+    AppTab.decode   => const DecodeScreen(),
+    AppTab.player   => const PlayerScreen(),
+    AppTab.catalog  => const CatalogScreen(),
+    AppTab.settings => const SettingsScreen(),
+    AppTab.admin    => const AdminScreen(),
+  };
+
+  @override
+  Widget build(BuildContext context) {
     final activeTab = ref.watch(activeTabProvider);
     final palette = activeTab.palette;
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.encode,
-        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.decode,
-        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.player,
-        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
-            ref.read(activeTabProvider.notifier).state = AppTab.settings,
-      },
-      child: Focus(
-        autofocus: true,
-        child: AnimatedTheme(
-          duration: const Duration(milliseconds: 300),
-          data: Theme.of(context),
-          child: Scaffold(
-            backgroundColor: kBgColor,
-            body: Column(
-              children: [
-                _TitleBar(activeTab: activeTab, palette: palette),
-                Expanded(
-                  child: Row(
-                    children: [
-                      _Sidebar(activeTab: activeTab, palette: palette),
-                      Expanded(
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          color: palette.surface,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 250),
-                            layoutBuilder: (currentChild, previousChildren) =>
-                                Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                ...previousChildren,
-                                ?currentChild,
-                              ],
-                            ),
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0.02, 0),
-                                  end: Offset.zero,
-                                ).animate(animation),
+    // Trigger animation whenever the active tab changes.
+    ref.listen(activeTabProvider, (prev, next) {
+      if (prev != null && prev != next) {
+        setState(() => _exitingTab = prev);
+        _ctrl.forward(from: 0);
+      }
+    });
+
+    return AnimatedTheme(
+      duration: const Duration(milliseconds: 300),
+      data: Theme.of(context),
+      child: Scaffold(
+        backgroundColor: kBgColor,
+        body: Column(
+          children: [
+            _TitleBar(activeTab: activeTab, palette: palette),
+            Expanded(
+              child: Row(
+                children: [
+                  _Sidebar(activeTab: activeTab, palette: palette),
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      color: palette.surface,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: AppTab.values.map((tab) {
+                          final isActive  = tab == activeTab;
+                          final isExiting = tab == _exitingTab;
+
+                          // Tabs not involved in this transition stay in the
+                          // tree (state preserved) but are invisible.
+                          if (!isActive && !isExiting) {
+                            return IgnorePointer(
+                              child: Opacity(
+                                opacity: 0,
+                                child: _screenFor(tab),
+                              ),
+                            );
+                          }
+
+                          // Entering tab — fades in and slides up.
+                          if (isActive) {
+                            return AnimatedBuilder(
+                              animation: _ctrl,
+                              builder: (_, child) => FadeTransition(
+                                opacity: _enterFade,
+                                child: SlideTransition(
+                                  position: _enterSlide,
+                                  child: child,
+                                ),
+                              ),
+                              child: _screenFor(tab),
+                            );
+                          }
+
+                          // Exiting tab — fades out behind the entering tab.
+                          return IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _ctrl,
+                              builder: (_, child) => FadeTransition(
+                                opacity: _exitFade,
                                 child: child,
                               ),
+                              child: _screenFor(tab),
                             ),
-                            child: KeyedSubtree(
-                              key: ValueKey(activeTab),
-                              child: _screenFor(activeTab),
-                            ),
-                          ),
-                        ),
+                          );
+                        }).toList(),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
-  }
-
-  Widget _screenFor(AppTab tab) {
-    return switch (tab) {
-      AppTab.encode => const EncodeScreen(),
-      AppTab.decode => const DecodeScreen(),
-      AppTab.player => const PlayerScreen(),
-      AppTab.settings => const SettingsScreen(),
-    };
   }
 }
 
@@ -160,10 +220,12 @@ class _TitleBar extends ConsumerWidget {
             const Spacer(),
             _WindowButton(
               icon: Icons.remove_rounded,
+              tooltip: 'Minimize',
               onTap: () => windowManager.minimize(),
             ),
             _WindowButton(
               icon: Icons.crop_square_rounded,
+              tooltip: 'Maximize',
               onTap: () async {
                 if (await windowManager.isMaximized()) {
                   windowManager.unmaximize();
@@ -174,6 +236,7 @@ class _TitleBar extends ConsumerWidget {
             ),
             _WindowButton(
               icon: Icons.close_rounded,
+              tooltip: 'Close',
               onTap: () => windowManager.close(),
               isClose: true,
             ),
@@ -186,11 +249,13 @@ class _TitleBar extends ConsumerWidget {
 
 class _WindowButton extends StatefulWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
   final bool isClose;
 
   const _WindowButton({
     required this.icon,
+    required this.tooltip,
     required this.onTap,
     this.isClose = false,
   });
@@ -201,26 +266,40 @@ class _WindowButton extends StatefulWidget {
 
 class _WindowButtonState extends State<_WindowButton> {
   bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return Tooltip(
+      message: widget.tooltip,
+      preferBelow: true,
+      waitDuration: const Duration(milliseconds: 600),
+      child: MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
       child: GestureDetector(
         onTap: widget.onTap,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: const Duration(milliseconds: 100),
           width: 46,
           height: 48,
           color: _hovered
               ? (widget.isClose
-                  ? const Color(0xFFE81123)
+                  ? const Color(0xFFE81123).withValues(alpha: _pressed ? 1.0 : 0.85)
                   : kSurface2Color)
               : Colors.transparent,
-          child: Icon(widget.icon, size: 16, color: kTextSecondary),
+          child: AnimatedScale(
+            scale: _pressed ? 0.88 : 1.0,
+            duration: const Duration(milliseconds: 80),
+            child: Icon(widget.icon, size: 16, color: kTextSecondary),
+          ),
         ),
       ),
+    ),
     );
   }
 }
@@ -238,17 +317,24 @@ class _Sidebar extends ConsumerStatefulWidget {
 class _SidebarState extends ConsumerState<_Sidebar> {
   AppTab? _hovered;
 
-  static const _items = [
+  static const _baseItems = [
     (AppTab.encode, Icons.upload_rounded, 'Encode'),
     (AppTab.decode, Icons.download_rounded, 'Decode'),
     (AppTab.player, Icons.play_circle_rounded, 'Player'),
+    (AppTab.catalog, Icons.photo_library_rounded, 'Catalog'),
     (AppTab.settings, Icons.settings_rounded, 'Settings'),
   ];
+
+  static const _adminItem =
+      (AppTab.admin, Icons.admin_panel_settings_rounded, 'Admin');
 
   @override
   Widget build(BuildContext context) {
     final encodeRunning = ref.watch(encodeProvider).isRunning;
     final decodeRunning = ref.watch(decodeProvider).isRunning;
+    final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
+
+    final items = isAdmin ? [..._baseItems, _adminItem] : _baseItems;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -260,7 +346,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          for (final item in _items)
+          for (final item in items)
             _SidebarItem(
               tab: item.$1,
               icon: item.$2,
@@ -312,7 +398,12 @@ class _SidebarItem extends StatelessWidget {
             ? palette.primary.withValues(alpha: 0.7)
             : kTextMuted;
 
-    return MouseRegion(
+    return Tooltip(
+      message: label,
+      preferBelow: false,
+      waitDuration: const Duration(milliseconds: 800),
+      child: MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => onHover(true),
       onExit: (_) => onHover(false),
       child: GestureDetector(
@@ -383,6 +474,7 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

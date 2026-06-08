@@ -161,12 +161,15 @@ class OutDirRow extends StatelessWidget {
                   ),
                 ),
                 if (isCustom)
-                  GestureDetector(
-                    onTap: onClear,
-                    child: const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: Icon(Icons.close_rounded,
-                          size: 15, color: kTextMuted),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: onClear,
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(Icons.close_rounded,
+                            size: 15, color: kTextMuted),
+                      ),
                     ),
                   ),
               ],
