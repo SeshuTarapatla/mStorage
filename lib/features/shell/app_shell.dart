@@ -50,13 +50,25 @@ class AppShell extends ConsumerWidget {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       color: palette.surface,
-                      child: IndexedStack(
-                        index: activeTab.index,
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: AppTab.values.map((tab) {
-                          return AnimatedOpacity(
-                            opacity: tab == activeTab ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 180),
-                            child: _screenFor(tab),
+                          final isActive = tab == activeTab;
+                          return IgnorePointer(
+                            ignoring: !isActive,
+                            child: AnimatedOpacity(
+                              opacity: isActive ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 240),
+                              curve: Curves.easeOut,
+                              child: AnimatedSlide(
+                                offset: isActive
+                                    ? Offset.zero
+                                    : const Offset(0.0, 0.018),
+                                duration: const Duration(milliseconds: 240),
+                                curve: Curves.easeOut,
+                                child: _screenFor(tab),
+                              ),
+                            ),
                           );
                         }).toList(),
                       ),
