@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_theme.dart';
 import '../encode_notifier.dart';
 
@@ -96,7 +97,11 @@ class _StepDot extends StatelessWidget {
 
     Widget? innerChild;
     if (isDone) {
-      innerChild = Icon(Icons.check_rounded, color: accentColor, size: 18);
+      innerChild = Icon(Icons.check_rounded, color: accentColor, size: 18)
+          .animate()
+          .scale(begin: const Offset(0.3, 0.3), end: const Offset(1.0, 1.0),
+              duration: 280.ms, curve: Curves.elasticOut)
+          .fade(duration: 150.ms);
     } else if (isActive) {
       if (progress != null) {
         innerChild = TweenAnimationBuilder<double>(

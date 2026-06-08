@@ -52,7 +52,13 @@ class AppShell extends ConsumerWidget {
                       color: palette.surface,
                       child: IndexedStack(
                         index: activeTab.index,
-                        children: AppTab.values.map(_screenFor).toList(),
+                        children: AppTab.values.map((tab) {
+                          return AnimatedOpacity(
+                            opacity: tab == activeTab ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 180),
+                            child: _screenFor(tab),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
@@ -131,10 +137,12 @@ class _TitleBar extends ConsumerWidget {
             const Spacer(),
             _WindowButton(
               icon: Icons.remove_rounded,
+              tooltip: 'Minimize',
               onTap: () => windowManager.minimize(),
             ),
             _WindowButton(
               icon: Icons.crop_square_rounded,
+              tooltip: 'Maximize',
               onTap: () async {
                 if (await windowManager.isMaximized()) {
                   windowManager.unmaximize();
@@ -145,6 +153,7 @@ class _TitleBar extends ConsumerWidget {
             ),
             _WindowButton(
               icon: Icons.close_rounded,
+              tooltip: 'Close',
               onTap: () => windowManager.close(),
               isClose: true,
             ),
@@ -157,11 +166,13 @@ class _TitleBar extends ConsumerWidget {
 
 class _WindowButton extends StatefulWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
   final bool isClose;
 
   const _WindowButton({
     required this.icon,
+    required this.tooltip,
     required this.onTap,
     this.isClose = false,
   });
@@ -172,26 +183,40 @@ class _WindowButton extends StatefulWidget {
 
 class _WindowButtonState extends State<_WindowButton> {
   bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
+    return Tooltip(
+      message: widget.tooltip,
+      preferBelow: true,
+      waitDuration: const Duration(milliseconds: 600),
+      child: MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
       child: GestureDetector(
         onTap: widget.onTap,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+          duration: const Duration(milliseconds: 100),
           width: 46,
           height: 48,
           color: _hovered
               ? (widget.isClose
-                  ? const Color(0xFFE81123)
+                  ? const Color(0xFFE81123).withValues(alpha: _pressed ? 1.0 : 0.85)
                   : kSurface2Color)
               : Colors.transparent,
-          child: Icon(widget.icon, size: 16, color: kTextSecondary),
+          child: AnimatedScale(
+            scale: _pressed ? 0.88 : 1.0,
+            duration: const Duration(milliseconds: 80),
+            child: Icon(widget.icon, size: 16, color: kTextSecondary),
+          ),
         ),
       ),
+    ),
     );
   }
 }
@@ -291,6 +316,7 @@ class _SidebarItem extends StatelessWidget {
             : kTextMuted;
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => onHover(true),
       onExit: (_) => onHover(false),
       child: GestureDetector(

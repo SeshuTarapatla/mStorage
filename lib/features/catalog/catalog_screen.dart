@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:math' show min;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../../core/services/catalog_cache_manager.dart';
@@ -282,24 +284,37 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                               onCardExpand: _onCardExpand,
                             ),
                     ),
-                    if (downloadState is DownloadActive ||
-                        downloadState is DownloadDone ||
-                        downloadState is DownloadError)
-                      _DownloadPanel(
-                        state: downloadState,
-                        palette: palette,
-                        onDismiss: () =>
-                            ref.read(downloadProvider.notifier).dismiss(),
-                        onCancel: () =>
-                            ref.read(downloadProvider.notifier).cancel(),
-                        onDecodeThis: (path) {
-                          ref
-                              .read(decodeOpenRequestProvider.notifier)
-                              .state = path;
-                          ref.read(activeTabProvider.notifier).state =
-                              AppTab.decode;
-                        },
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 280),
+                      transitionBuilder: (child, anim) => SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.18),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                            parent: anim, curve: Curves.easeOut)),
+                        child: FadeTransition(opacity: anim, child: child),
                       ),
+                      child: (downloadState is DownloadActive ||
+                              downloadState is DownloadDone ||
+                              downloadState is DownloadError)
+                          ? _DownloadPanel(
+                              key: const ValueKey('panel'),
+                              state: downloadState,
+                              palette: palette,
+                              onDismiss: () =>
+                                  ref.read(downloadProvider.notifier).dismiss(),
+                              onCancel: () =>
+                                  ref.read(downloadProvider.notifier).cancel(),
+                              onDecodeThis: (path) {
+                                ref
+                                    .read(decodeOpenRequestProvider.notifier)
+                                    .state = path;
+                                ref.read(activeTabProvider.notifier).state =
+                                    AppTab.decode;
+                              },
+                            )
+                          : const SizedBox.shrink(key: ValueKey('none')),
+                    ),
                   ],
                 ),
               ),
@@ -793,12 +808,19 @@ class _GridState extends State<_Grid> {
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
       itemCount: widget.entries.length,
-      itemBuilder: (_, i) => CatalogCard(
-        entry: widget.entries[i],
-        aspectRatio: _aspectRatio,
-        onOpenInBrowser: () => widget.onOpenInBrowser(widget.entries[i]),
-        onExpand: (rect) => widget.onCardExpand(widget.entries[i], rect),
-      ),
+      itemBuilder: (_, i) {
+        final entry = widget.entries[i];
+        return CatalogCard(
+          key: ValueKey(entry.imdbId.isNotEmpty ? entry.imdbId : entry.title),
+          entry: entry,
+          aspectRatio: _aspectRatio,
+          onOpenInBrowser: () => widget.onOpenInBrowser(entry),
+          onExpand: (rect) => widget.onCardExpand(entry, rect),
+        )
+            .animate()
+            .fadeIn(duration: 280.ms, delay: Duration(milliseconds: min(i, 9) * 35))
+            .slideY(begin: 0.06, duration: 280.ms, curve: Curves.easeOut);
+      },
     );
   }
 }
@@ -881,6 +903,7 @@ class _DownloadPanel extends StatelessWidget {
   final void Function(String filePath) onDecodeThis;
 
   const _DownloadPanel({
+    super.key,
     required this.state,
     required this.palette,
     required this.onDismiss,
@@ -1012,12 +1035,17 @@ class _ActiveDownload extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: progress,
-          color: palette.primary,
-          backgroundColor: kSurface2Color,
-          minHeight: 4,
-          borderRadius: BorderRadius.circular(2),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: progress ?? 0),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          builder: (_, val, _) => LinearProgressIndicator(
+            value: progress != null ? val : null,
+            color: palette.primary,
+            backgroundColor: kSurface2Color,
+            minHeight: 4,
+            borderRadius: BorderRadius.circular(2),
+          ),
         ),
       ],
     );
@@ -1146,7 +1174,9 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.photo_library_outlined, size: 48, color: kTextMuted),
+          Icon(Icons.photo_library_outlined, size: 48, color: kTextMuted)
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .scaleXY(begin: 0.92, end: 1.0, duration: 1800.ms, curve: Curves.easeInOut),
           const SizedBox(height: 16),
           Text(
             'No catalog loaded',

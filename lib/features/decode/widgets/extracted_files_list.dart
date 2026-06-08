@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:path/path.dart' as p;
 import '../../../core/theme/app_theme.dart';
 
@@ -49,7 +50,10 @@ class ExtractedFilesList extends StatelessWidget {
                           p.extension(files[i]).replaceFirst('.', '').toLowerCase())
                       ? onOpenInPlayer
                       : null,
-                ),
+                )
+                    .animate()
+                    .fadeIn(duration: 260.ms, delay: Duration(milliseconds: i * 40))
+                    .slideX(begin: -0.04, duration: 260.ms, curve: Curves.easeOut),
               ],
             ],
           ),

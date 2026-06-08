@@ -644,6 +644,7 @@ class _VlcButton extends StatefulWidget {
 
 class _VlcButtonState extends State<_VlcButton> {
   bool _hovered = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
@@ -653,45 +654,53 @@ class _VlcButtonState extends State<_VlcButton> {
         : kTextMuted;
 
     return MouseRegion(
+      cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
       child: GestureDetector(
         onTap: widget.enabled ? widget.onTap : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-          decoration: BoxDecoration(
-            gradient: widget.enabled
-                ? LinearGradient(colors: [color, color.withValues(alpha: 0.75)])
-                : null,
-            color: widget.enabled ? null : kSurface2Color,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: widget.enabled && _hovered
-                ? [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      offset: const Offset(0, 3),
-                    )
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.videocam_rounded,
-                  size: 16,
-                  color: widget.enabled ? Colors.white : kTextMuted),
-              const SizedBox(width: 8),
-              Text(
-                'Open in VLC',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: widget.enabled ? Colors.white : kTextMuted,
+        onTapDown: widget.enabled ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: widget.enabled ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: widget.enabled ? () => setState(() => _pressed = false) : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            decoration: BoxDecoration(
+              gradient: widget.enabled
+                  ? LinearGradient(colors: [color, color.withValues(alpha: 0.75)])
+                  : null,
+              color: widget.enabled ? null : kSurface2Color,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: widget.enabled && _hovered
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 3),
+                      )
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.videocam_rounded,
+                    size: 16,
+                    color: widget.enabled ? Colors.white : kTextMuted),
+                const SizedBox(width: 8),
+                Text(
+                  'Open in VLC',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: widget.enabled ? Colors.white : kTextMuted,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -724,19 +733,29 @@ class _SyncplayButton extends StatefulWidget {
 
 class _SyncplayButtonState extends State<_SyncplayButton> {
   bool _hovered = false;
+  bool _pressed = false;
+
+  bool get _active => widget.running || widget.enabled;
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
+      cursor: _active ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
       child: GestureDetector(
         onTap: widget.running
             ? widget.onStop
             : widget.enabled
                 ? widget.onTap
                 : null,
-        child: AnimatedContainer(
+        onTapDown: _active ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: _active ? (_) => setState(() => _pressed = false) : null,
+        onTapCancel: _active ? () => setState(() => _pressed = false) : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           decoration: BoxDecoration(
@@ -788,6 +807,7 @@ class _SyncplayButtonState extends State<_SyncplayButton> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -1073,35 +1093,44 @@ class _SyncplayLogPanel extends StatelessWidget {
               ),
             ),
           ),
-          if (expanded) ...[
-            Divider(height: 1, color: kBorderColor),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView.builder(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                itemCount: logs.length,
-                reverse: true,
-                itemBuilder: (_, i) {
-                  final line = logs[logs.length - 1 - i];
-                  final isErr = line.startsWith('[err]');
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text(
-                      line,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: isErr
-                            ? const Color(0xFFFF6B6B)
-                            : const Color(0xFF8B949E),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            child: expanded
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Divider(height: 1, color: kBorderColor),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          itemCount: logs.length,
+                          reverse: true,
+                          itemBuilder: (_, i) {
+                            final line = logs[logs.length - 1 - i];
+                            final isErr = line.startsWith('[err]');
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                line,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  color: isErr
+                                      ? const Color(0xFFFF6B6B)
+                                      : const Color(0xFF8B949E),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );

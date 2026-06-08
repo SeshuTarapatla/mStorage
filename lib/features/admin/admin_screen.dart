@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' show min;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/services/catalog_cache_manager.dart';
@@ -56,6 +58,10 @@ class _AdminScreenState extends State<AdminScreen> {
   // True while a "Load more" or paste-enrichment API call is in flight.
   bool _loadingMore = false;
 
+  // Brief highlight on pool image tap; auto-clears after 200 ms.
+  String? _flashUrl;
+  Timer?  _flashTimer;
+
   // Inline paste-validation error; auto-clears after 3 s.
   String? _pasteError;
   Timer?  _pasteErrorTimer;
@@ -80,6 +86,7 @@ class _AdminScreenState extends State<AdminScreen> {
     _languageCtrl.dispose();
     _sizeMbCtrl.dispose();
     _pasteErrorTimer?.cancel();
+    _flashTimer?.cancel();
     super.dispose();
   }
 
@@ -95,12 +102,17 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // Click: unselected → append to queue; selected → remove.
   void _toggleImage(String url) {
+    _flashTimer?.cancel();
     setState(() {
       if (_selected.contains(url)) {
         _selected.remove(url);
       } else {
         _selected.add(url);
       }
+      _flashUrl = url;
+    });
+    _flashTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _flashUrl = null);
     });
   }
 
@@ -320,10 +332,23 @@ class _AdminScreenState extends State<AdminScreen> {
   // ── Lightbox ──────────────────────────────────────────────────────────────
 
   void _showImagePreview(int displayIndex) {
-    showDialog<List<String>>(
+    showGeneralDialog<List<String>>(
       context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close',
       barrierColor: Colors.black.withValues(alpha: 0.9),
-      builder: (_) => _ImageLightbox(
+      transitionDuration: const Duration(milliseconds: 220),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (ctx, _, _) => _ImageLightbox(
         images: _displayImages,
         initialIndex: displayIndex,
         selected: List<String>.from(_selected),
@@ -1023,6 +1048,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 final poolIdx    = e.key;
                 final url        = e.value;
                 final displayIdx = _selected.length + poolIdx;
+                final flashing   = _flashUrl == url;
                 return GestureDetector(
                   onTap: () => _toggleImage(url),
                   child: MouseRegion(
@@ -1032,7 +1058,18 @@ class _AdminScreenState extends State<AdminScreen> {
                       width: 110, height: 82,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: kBorderColor, width: 1.0),
+                        border: Border.all(
+                          color: flashing
+                              ? _adminPalette.primary
+                              : kBorderColor,
+                          width: flashing ? 2.0 : 1.0,
+                        ),
+                        boxShadow: flashing
+                            ? [BoxShadow(
+                                color: _adminPalette.primary.withValues(alpha: 0.4),
+                                blurRadius: 8,
+                              )]
+                            : [],
                       ),
                       child: Stack(children: [
                         thumb(url),
@@ -1040,7 +1077,12 @@ class _AdminScreenState extends State<AdminScreen> {
                       ]),
                     ),
                   ),
-                );
+                )
+                    .animate()
+                    .fadeIn(
+                        duration: 250.ms,
+                        delay: Duration(milliseconds: min(poolIdx, 8) * 25))
+                    .slideY(begin: 0.05, duration: 250.ms, curve: Curves.easeOut);
               }),
               // Load more
               if (_nextPageToken != null || _loadingMore)
