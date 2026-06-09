@@ -41,7 +41,13 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     });
   }
 
-  void _onVideoDropped(String path) => setState(() => _videoPath = path);
+  void _onVideoDropped(String path) {
+    final decState = ref.read(decodeProvider);
+    if (!decState.isRunning && decState.step != DecodeStep.idle) {
+      ref.read(decodeProvider.notifier).reset();
+    }
+    setState(() => _videoPath = path);
+  }
 
   void _clearAll() => setState(() => _videoPath = null);
 
@@ -99,9 +105,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     });
 
     final customDir = settings.decodeOutputDirectory;
-    final displayOutDir = customDir.isNotEmpty
-        ? customDir
-        : (_videoPath != null ? p.dirname(_videoPath!) : '');
+    final displayOutDir = customDir.isNotEmpty ? customDir : AppDirectories.decoded;
 
     // First video in extracted files, for "Open in Player" shortcut
     final firstVideo = state.extractedFiles.where((f) {
@@ -163,7 +167,13 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               allowedExtensions: const ['mp4'],
               onFilePicked: _onVideoDropped,
               onTap: _pickVideo,
-              onClear: () => setState(() => _videoPath = null),
+              onClear: () {
+                final step = ref.read(decodeProvider).step;
+                if (step == DecodeStep.done || step == DecodeStep.error) {
+                  ref.read(decodeProvider.notifier).reset();
+                }
+                setState(() => _videoPath = null);
+              },
             ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05),
 
             const SizedBox(height: 16),
@@ -211,6 +221,16 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
                 onOpenInPlayer: _openInPlayer,
               ).animate().fadeIn(delay: 200.ms),
             ],
+
+            if (!state.isRunning && state.step != DecodeStep.done &&
+                settings.password.isEmpty)
+              PasswordWarningBanner(
+                accentColor: accent,
+                message: 'No password set — decoding will fail if the file is password-protected.',
+                onGoToSettings: () => ref
+                    .read(activeTabProvider.notifier)
+                    .state = AppTab.settings,
+              ).animate().fadeIn(duration: 300.ms),
 
             if (!state.isRunning && state.step != DecodeStep.done)
               _DecodeButton(

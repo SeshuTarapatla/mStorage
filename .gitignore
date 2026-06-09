@@ -127,3 +127,6 @@ legacy-mStorage/
 
 # Generated installer output
 installer/
+
+# Ai input
+QUERY.md

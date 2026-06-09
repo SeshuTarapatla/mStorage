@@ -9,6 +9,7 @@ import '../../core/models/encode_config.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 import 'encode_notifier.dart';
 import 'widgets/drop_zone.dart';
@@ -50,9 +51,12 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
   }
 
   void _onVideoDropped(String path) {
+    final encState = ref.read(encodeProvider);
+    final wasFinished = !encState.isRunning && encState.step != EncodeStep.idle;
+    if (wasFinished) ref.read(encodeProvider.notifier).reset();
     setState(() {
       _videoPath = path;
-      if (_titleCtrl.text.isEmpty) {
+      if (_titleCtrl.text.isEmpty || wasFinished) {
         _titleCtrl.text = p.basenameWithoutExtension(path);
       }
     });
@@ -106,6 +110,12 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
       }
     }
 
+    if (videoPath != null) {
+      final encState = ref.read(encodeProvider);
+      if (!encState.isRunning && encState.step != EncodeStep.idle) {
+        ref.read(encodeProvider.notifier).reset();
+      }
+    }
     setState(() {
       if (videoPath != null) {
         _videoPath = videoPath;
@@ -204,11 +214,7 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
     final accent = _palette.primary;
 
     final customDir = settings.encodeOutputDirectory;
-    final displayOutDir = customDir.isNotEmpty
-        ? customDir
-        : (_videoPath != null
-            ? p.join(p.dirname(_videoPath!), 'output')
-            : '');
+    final displayOutDir = customDir.isNotEmpty ? customDir : AppDirectories.encoded;
 
     final anyFieldSet = _videoPath != null || _posterPath != null || _srtPath != null;
 
@@ -255,10 +261,16 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                   onFilePicked: _onVideoDropped,
                   onTap: _pickVideo,
                   onMultiFileDrop: _routeFiles,
-                  onClear: () => setState(() {
-                    _videoPath = null;
-                    _titleCtrl.clear();
-                  }),
+                  onClear: () {
+                    final step = ref.read(encodeProvider).step;
+                    if (step == EncodeStep.done || step == EncodeStep.error) {
+                      ref.read(encodeProvider.notifier).reset();
+                    }
+                    setState(() {
+                      _videoPath = null;
+                      _titleCtrl.clear();
+                    });
+                  },
                 ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05),
 
                 const SizedBox(height: 20),
@@ -379,6 +391,18 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                       _clearAll();
                     },
                   ).animate().fadeIn().scaleXY(begin: 0.95),
+
+                // Password warning
+                if ((encodeState.step == EncodeStep.idle ||
+                        encodeState.step == EncodeStep.error) &&
+                    settings.password.isEmpty)
+                  PasswordWarningBanner(
+                    accentColor: accent,
+                    message: 'No password set — encoded file will not be encrypted.',
+                    onGoToSettings: () => ref
+                        .read(activeTabProvider.notifier)
+                        .state = AppTab.settings,
+                  ).animate().fadeIn(duration: 300.ms),
 
                 // Encode button
                 if (encodeState.step == EncodeStep.idle ||

@@ -110,6 +110,71 @@ class ErrorBanner extends StatelessWidget {
   }
 }
 
+class PasswordWarningBanner extends StatelessWidget {
+  final Color accentColor;
+  final String message;
+  final VoidCallback onGoToSettings;
+
+  const PasswordWarningBanner({
+    super.key,
+    required this.accentColor,
+    required this.message,
+    required this.onGoToSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.5),
+                  blurRadius: 10,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Icon(Icons.lock_open_rounded, color: accentColor, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 13, color: accentColor),
+            ),
+          ),
+          TextButton(
+            onPressed: onGoToSettings,
+            style: TextButton.styleFrom(
+              foregroundColor: accentColor,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            child: Text(
+              'Set password',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: accentColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class OutDirRow extends StatelessWidget {
   final String dir;
   final Color accentColor;
