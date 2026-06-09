@@ -449,7 +449,13 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
     final updateStatus = ref.watch(updateProvider).status;
 
-    final items = isAdmin ? [..._baseItems, _adminItem] : _baseItems;
+    final startupTab = AppTab.values[
+        ref.watch(settingsProvider).startupTab.clamp(0, AppTab.settings.index)];
+    final base = [
+      ..._baseItems.where((i) => i.$1 == startupTab),
+      ..._baseItems.where((i) => i.$1 != startupTab),
+    ];
+    final items = isAdmin ? [...base, _adminItem] : base;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
