@@ -40,16 +40,20 @@ class UpdateNotifier extends Notifier<UpdateState> {
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      final update = await _service.checkForUpdate(packageInfo.version);
-      if (update == null) {
+      final info = await _service.checkForUpdate(packageInfo.version);
+      if (info == null) {
         state = const UpdateState(status: UpdateStatus.upToDate);
-      } else {
+      } else if (UpdateService.isNewer(info.version, packageInfo.version)) {
+        if (info.assetUrl.isEmpty) throw Exception('No .exe asset found in release');
         final dismissed = await _isDismissedToday();
         state = UpdateState(
           status: UpdateStatus.available,
-          info: update,
+          info: info,
           dismissedToday: dismissed,
         );
+      } else {
+        // Same or older — store info so release notes are available in the UI.
+        state = UpdateState(status: UpdateStatus.upToDate, info: info);
       }
     } catch (e) {
       state = UpdateState(

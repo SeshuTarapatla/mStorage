@@ -43,17 +43,15 @@ class UpdateService {
     final tagName = json['tag_name'] as String? ?? '';
     final latestVersion = tagName.replaceFirst(RegExp(r'^v'), '');
 
-    if (!isNewer(latestVersion, currentVersion)) return null;
-
     final assets = (json['assets'] as List? ?? []).cast<Map<String, dynamic>>();
     final asset = assets.firstWhere(
       (a) => (a['name'] as String? ?? '').endsWith('.exe'),
       orElse: () => {},
     );
-
     final assetUrl = asset['browser_download_url'] as String? ?? '';
-    if (assetUrl.isEmpty) throw Exception('No .exe asset found in release');
 
+    // Always return info so the caller has release notes even when up to date.
+    // assetUrl may be empty when not an update — notifier validates before download.
     return UpdateInfo(
       version: latestVersion,
       releaseNotes: json['body'] as String? ?? '',

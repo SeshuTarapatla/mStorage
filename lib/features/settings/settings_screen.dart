@@ -98,55 +98,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildUpdateControl(UpdateState updateState) {
-    final accent = _palette.primary;
+  Widget _buildUpdateSubtitle(UpdateState updateState, Color accent) {
+    final version = 'v${_appVersion ?? '...'}';
+    final info = updateState.info;
+
     switch (updateState.status) {
-      case UpdateStatus.idle:
-        return _ActionButton(
-          label: 'Check Now',
-          accent: accent,
-          onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
-        );
-      case UpdateStatus.upToDate:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ActionButton(
-              label: 'Check Now',
-              accent: accent,
-              onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
-            ),
-            const SizedBox(height: 4),
-            Text('Already up to date',
-                style: TextStyle(fontSize: 11, color: accent)),
-          ],
-        );
       case UpdateStatus.checking:
-        return SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-        );
-      case UpdateStatus.available:
-        final info = updateState.info!;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        return Text('$version  ·  Checking for updates…',
+            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+      case UpdateStatus.upToDate:
+        return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _ActionButton(
-              label: 'Download v${info.version}',
-              accent: accent,
-              onTap: () => ref.read(updateProvider.notifier).downloadUpdate(),
-            ),
-            if (info.releaseNotes.isNotEmpty) ...[
-              const SizedBox(height: 4),
+            Text('$version  ·  Already up to date  ·',
+                style: const TextStyle(fontSize: 12, color: kTextSecondary)),
+            if (info?.releaseNotes.isNotEmpty == true) ...[
+              const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => _showChangelog(info),
+                onTap: () => _showChangelog(info!),
                 child: Text(
-                  'View changelog',
+                  "What's new",
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     color: accent,
                     decoration: TextDecoration.underline,
                     decorationColor: accent,
@@ -155,6 +128,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ],
+        );
+      case UpdateStatus.available:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Update available  ·',
+                style: TextStyle(fontSize: 12, color: accent)),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: info?.releaseNotes.isNotEmpty == true
+                  ? () => _showChangelog(info!)
+                  : null,
+              child: Text(
+                "What's new",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: accent,
+                  decoration: TextDecoration.underline,
+                  decorationColor: accent,
+                ),
+              ),
+            ),
+          ],
+        );
+      case UpdateStatus.downloading:
+        return Text('$version  ·  Downloading update…',
+            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+      case UpdateStatus.readyToInstall:
+        return Text('$version  ·  Ready to install',
+            style: TextStyle(fontSize: 12, color: accent));
+      case UpdateStatus.error:
+        return Text('$version  ·  ${updateState.errorMessage ?? 'Check failed'}',
+            style: const TextStyle(fontSize: 12, color: kDanger));
+      case UpdateStatus.idle:
+        return Text('$version  ·  Currently installed',
+            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+    }
+  }
+
+  Widget _buildUpdateControl(UpdateState updateState) {
+    final accent = _palette.primary;
+    switch (updateState.status) {
+      case UpdateStatus.idle:
+      case UpdateStatus.upToDate:
+        return _ActionButton(
+          label: 'Check Now',
+          accent: accent,
+          onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
+        );
+      case UpdateStatus.checking:
+        // Same padding/size as _ActionButton so the row never changes height.
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accent.withValues(alpha: 0.3)),
+          ),
+          child: SizedBox(
+            width: 13,
+            height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+          ),
+        );
+      case UpdateStatus.available:
+        final info = updateState.info!;
+        return _ActionButton(
+          label: 'Download v${info.version}',
+          accent: accent,
+          onTap: () => ref.read(updateProvider.notifier).downloadUpdate(),
         );
       case UpdateStatus.downloading:
         return SizedBox(
@@ -301,7 +344,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _SettingRow(
           icon: Icons.system_update_rounded,
           title: 'Check for Updates',
-          subtitle: 'mStorage v${_appVersion ?? '...'}  ·  Currently installed',
+          subtitle: '',
+          subtitleWidget: _buildUpdateSubtitle(updateState, accent),
           accent: accent,
           control: _buildUpdateControl(updateState),
         ),
@@ -707,6 +751,7 @@ class _SettingRow extends StatefulWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? subtitleWidget;
   final Color accent;
   final Widget control;
 
@@ -716,6 +761,7 @@ class _SettingRow extends StatefulWidget {
     required this.subtitle,
     required this.accent,
     required this.control,
+    this.subtitleWidget,
   });
 
   @override
@@ -751,9 +797,10 @@ class _SettingRowState extends State<_SettingRow> {
                             fontWeight: FontWeight.w500,
                             color: kTextPrimary)),
                     const SizedBox(height: 2),
-                    Text(widget.subtitle,
-                        style: const TextStyle(
-                            fontSize: 12, color: kTextSecondary)),
+                    widget.subtitleWidget ??
+                        Text(widget.subtitle,
+                            style: const TextStyle(
+                                fontSize: 12, color: kTextSecondary)),
                   ],
                 ),
               ),
