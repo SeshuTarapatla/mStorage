@@ -40,9 +40,10 @@ class _AdminScreenState extends State<AdminScreen> {
   final _genreFocusNode = FocusNode();
 
   // ── Extra sheet fields (not from IMDB) ───────────────────────────────────
-  final _videoUrlCtrl = TextEditingController();
-  final _languageCtrl = TextEditingController();
-  final _sizeMbCtrl   = TextEditingController();
+  final _videoUrlCtrl    = TextEditingController();
+  final _languageCtrl    = TextEditingController();
+  final _languageFocusNode = FocusNode();
+  final _sizeMbCtrl      = TextEditingController();
   bool _encoded = true;
   bool _show    = true;
 
@@ -84,6 +85,7 @@ class _AdminScreenState extends State<AdminScreen> {
     _genreFocusNode.dispose();
     _videoUrlCtrl.dispose();
     _languageCtrl.dispose();
+    _languageFocusNode.dispose();
     _sizeMbCtrl.dispose();
     _pasteErrorTimer?.cancel();
     _flashTimer?.cancel();
@@ -1139,10 +1141,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 hint: 'video_url  (Google Photos album link)'),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: _extrasField(
-                controller: _languageCtrl, hint: 'language'),
-          ),
+          Expanded(child: _languageAutocomplete()),
           const SizedBox(width: 8),
           SizedBox(
             width: 90,
@@ -1169,6 +1168,72 @@ class _AdminScreenState extends State<AdminScreen> {
       ],
     );
   }
+
+  static const _languageOptions = ['English', 'Hindi', 'Telugu'];
+
+  Widget _languageAutocomplete() => RawAutocomplete<String>(
+        textEditingController: _languageCtrl,
+        focusNode: _languageFocusNode,
+        optionsBuilder: (TextEditingValue v) {
+          if (v.text.isEmpty) return _languageOptions;
+          return _languageOptions.where(
+              (o) => o.toLowerCase().contains(v.text.toLowerCase()));
+        },
+        optionsViewBuilder: (context, onSelected, options) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            color: kSurfaceColor,
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 120),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  return InkWell(
+                    onTap: () => onSelected(option),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      child: Text(option,
+                          style:
+                              TextStyle(fontSize: 12, color: kTextPrimary)),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        fieldViewBuilder: (context, controller, focusNode, onSubmitted) =>
+            TextField(
+          controller: controller,
+          focusNode: focusNode,
+          onSubmitted: (_) => onSubmitted(),
+          style: TextStyle(fontSize: 12, color: kTextPrimary),
+          decoration: InputDecoration(
+            hintText: 'language',
+            hintStyle: TextStyle(fontSize: 12, color: kTextMuted),
+            filled: true,
+            fillColor: kSurfaceColor,
+            isDense: true,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: kBorderColor)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: kBorderColor)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _adminPalette.primary)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          ),
+        ),
+      );
 
   Widget _extrasField({
     required TextEditingController controller,

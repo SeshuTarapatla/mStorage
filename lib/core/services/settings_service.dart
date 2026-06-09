@@ -26,6 +26,7 @@ const _kSyncplayUsername = 'syncplay_username';
 const _kSyncplayRoom = 'syncplay_room';
 const _kStartupTab = 'startup_tab';
 const _kLastVideoPath = 'last_video_path';
+const _kTabOrder = 'tab_order';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -47,6 +48,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
       syncplayRoom: _prefs.getString(_kSyncplayRoom) ?? '',
       startupTab: _prefs.getInt(_kStartupTab) ?? 0,
       lastVideoPath: _prefs.getString(_kLastVideoPath) ?? '',
+      tabOrder: _prefs.getString(_kTabOrder)
+          ?.split(',')
+          .map(int.parse)
+          .toList(),
     );
   }
 
@@ -103,6 +108,29 @@ class SettingsNotifier extends Notifier<AppSettings> {
   Future<void> setStartupTab(int value) async {
     state = state.copyWith(startupTab: value);
     await _prefs.setInt(_kStartupTab, value);
+  }
+
+  Future<void> setTabOrder(List<int> value) async {
+    state = state.copyWith(tabOrder: value);
+    await _prefs.setString(_kTabOrder, value.join(','));
+  }
+
+  Future<void> resetTabOrder() async {
+    await _prefs.remove(_kTabOrder);
+    state = AppSettings(
+      password: state.password,
+      encodeOutputDirectory: state.encodeOutputDirectory,
+      decodeOutputDirectory: state.decodeOutputDirectory,
+      catalogDownloadDirectory: state.catalogDownloadDirectory,
+      preserveAspectRatio: state.preserveAspectRatio,
+      maskDurationSeconds: state.maskDurationSeconds,
+      syncplayPort: state.syncplayPort,
+      syncplayUsername: state.syncplayUsername,
+      syncplayRoom: state.syncplayRoom,
+      startupTab: state.startupTab,
+      lastVideoPath: state.lastVideoPath,
+      tabOrder: null,
+    );
   }
 
   Future<void> resetAll() async {

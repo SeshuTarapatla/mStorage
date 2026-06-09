@@ -116,11 +116,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 200),
                       child: Markdown(
-                        data: info.releaseNotes
-                            .split('\n')
-                            .skipWhile((l) => l.trimLeft().startsWith('#'))
-                            .join('\n')
-                            .trimLeft(),
+                        data: info.releaseNotes,
                         shrinkWrap: true,
                         padding: const EdgeInsets.only(top: 4),
                         styleSheet: _mdStyle(palette),
@@ -449,7 +445,22 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
     final updateStatus = ref.watch(updateProvider).status;
 
-    final items = isAdmin ? [..._baseItems, _adminItem] : _baseItems;
+    final settings = ref.watch(settingsProvider);
+    final List<(AppTab, IconData, String)> base;
+    if (settings.tabOrder != null) {
+      base = settings.tabOrder!
+          .where((i) => i <= AppTab.settings.index)
+          .map((i) => _baseItems.firstWhere((item) => item.$1.index == i))
+          .toList();
+    } else {
+      final startupTab =
+          AppTab.values[settings.startupTab.clamp(0, AppTab.settings.index)];
+      base = [
+        ..._baseItems.where((i) => i.$1 == startupTab),
+        ..._baseItems.where((i) => i.$1 != startupTab),
+      ];
+    }
+    final items = isAdmin ? [...base, _adminItem] : base;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
