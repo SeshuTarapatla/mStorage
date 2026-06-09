@@ -347,15 +347,21 @@ class DownloadHistoryNotifier extends Notifier<List<DownloadRecord>> {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kHistoryKey) ?? '[]';
     try {
-      final list = (jsonDecode(raw) as List)
+      final decoded = jsonDecode(raw) as List;
+      final seen = <String>{};
+      final list = decoded
           .map((e) => DownloadRecord.fromJson(e as Map<String, dynamic>))
+          .where((r) => seen.add(r.filePath))
           .toList();
       if (!_disposed) state = list;
+      if (list.length < decoded.length) await _persist(list);
     } catch (_) {}
   }
 
   Future<void> add(DownloadRecord record) async {
-    final updated = [record, ...state].take(100).toList();
+    final updated = [record, ...state.where((r) => r.filePath != record.filePath)]
+        .take(100)
+        .toList();
     state = updated;
     await _persist(updated);
   }
