@@ -25,9 +25,16 @@ class UpdateService {
     return v.replaceFirst(RegExp(r'^v'), '').split('.').map((s) => int.tryParse(s) ?? 0).toList();
   }
 
+  static String _stripLeadingHeadings(String body) => body
+      .split('\n')
+      .skipWhile((l) => l.trimLeft().startsWith('#'))
+      .join('\n')
+      .trimLeft();
+
   Future<UpdateInfo?> checkForUpdate(String currentVersion) async {
     final response = await http.get(
-      Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest'),
+      Uri.parse(
+          'https://api.github.com/repos/$_owner/$_repo/releases?per_page=100'),
       headers: {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'mStorage-app',
@@ -39,22 +46,57 @@ class UpdateService {
       throw Exception('GitHub API returned ${response.statusCode}');
     }
 
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    final tagName = json['tag_name'] as String? ?? '';
-    final latestVersion = tagName.replaceFirst(RegExp(r'^v'), '');
+    final releases =
+        (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+    if (releases.isEmpty) return null;
 
-    final assets = (json['assets'] as List? ?? []).cast<Map<String, dynamic>>();
+    // GitHub returns releases sorted newest-first.
+    final latest = releases.first;
+    final latestVersion =
+        (latest['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
+
+    final assets =
+        (latest['assets'] as List? ?? []).cast<Map<String, dynamic>>();
     final asset = assets.firstWhere(
       (a) => (a['name'] as String? ?? '').endsWith('.exe'),
       orElse: () => {},
     );
     final assetUrl = asset['browser_download_url'] as String? ?? '';
 
-    // Always return info so the caller has release notes even when up to date.
-    // assetUrl may be empty when not an update — notifier validates before download.
+    if (!isNewer(latestVersion, currentVersion)) {
+      // Up to date — return latest release notes only (no version header needed).
+      return UpdateInfo(
+        version: latestVersion,
+        releaseNotes: _stripLeadingHeadings(latest['body'] as String? ?? ''),
+        assetUrl: assetUrl,
+        assetName: asset['name'] as String? ?? 'mStorage_Setup.exe',
+      );
+    }
+
+    // Collect every release newer than the installed version, newest-first.
+    final newer = releases.where((r) {
+      final v =
+          (r['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
+      return isNewer(v, currentVersion);
+    }).toList();
+
+    // Build consolidated changelog: single version → plain body,
+    // multiple versions → stacked sections with version headers.
+    final String notes;
+    if (newer.length == 1) {
+      notes = _stripLeadingHeadings(newer.first['body'] as String? ?? '');
+    } else {
+      notes = newer.map((r) {
+        final v =
+            (r['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
+        final body = _stripLeadingHeadings(r['body'] as String? ?? '');
+        return '### v$v\n$body';
+      }).join('\n\n');
+    }
+
     return UpdateInfo(
       version: latestVersion,
-      releaseNotes: json['body'] as String? ?? '',
+      releaseNotes: notes,
       assetUrl: assetUrl,
       assetName: asset['name'] as String? ?? 'mStorage_Setup.exe',
     );

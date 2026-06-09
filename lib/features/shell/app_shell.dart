@@ -116,11 +116,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 200),
                       child: Markdown(
-                        data: info.releaseNotes
-                            .split('\n')
-                            .skipWhile((l) => l.trimLeft().startsWith('#'))
-                            .join('\n')
-                            .trimLeft(),
+                        data: info.releaseNotes,
                         shrinkWrap: true,
                         padding: const EdgeInsets.only(top: 4),
                         styleSheet: _mdStyle(palette),
