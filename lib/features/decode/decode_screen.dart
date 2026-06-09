@@ -222,6 +222,16 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
               ).animate().fadeIn(delay: 200.ms),
             ],
 
+            if (!state.isRunning && state.step != DecodeStep.done &&
+                settings.password.isEmpty)
+              PasswordWarningBanner(
+                accentColor: accent,
+                message: 'No password set — decoding will fail if the file is password-protected.',
+                onGoToSettings: () => ref
+                    .read(activeTabProvider.notifier)
+                    .state = AppTab.settings,
+              ).animate().fadeIn(duration: 300.ms),
+
             if (!state.isRunning && state.step != DecodeStep.done)
               _DecodeButton(
                 enabled: _videoPath != null,

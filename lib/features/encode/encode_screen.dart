@@ -9,6 +9,7 @@ import '../../core/models/encode_config.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 import 'encode_notifier.dart';
 import 'widgets/drop_zone.dart';
@@ -390,6 +391,18 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                       _clearAll();
                     },
                   ).animate().fadeIn().scaleXY(begin: 0.95),
+
+                // Password warning
+                if ((encodeState.step == EncodeStep.idle ||
+                        encodeState.step == EncodeStep.error) &&
+                    settings.password.isEmpty)
+                  PasswordWarningBanner(
+                    accentColor: accent,
+                    message: 'No password set — encoded file will not be encrypted.',
+                    onGoToSettings: () => ref
+                        .read(activeTabProvider.notifier)
+                        .state = AppTab.settings,
+                  ).animate().fadeIn(duration: 300.ms),
 
                 // Encode button
                 if (encodeState.step == EncodeStep.idle ||
