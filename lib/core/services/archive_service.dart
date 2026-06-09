@@ -65,15 +65,22 @@ class ArchiveService {
     return b.buffer.asUint8List();
   }
 
-  /// Packages [fileEntries] (sourcePath, archiveName) pairs into a STORE ZIP.
-  /// Each file is stored under its [archiveName], allowing in-archive renaming
-  /// (e.g., to `<title>.mp4`). Progress is reported inline during streaming.
+  /// Packages [fileEntries] (sourcePath, archiveName) pairs into a ZIP.
+  /// When [password] is set, delegates to 7za for AES-256 encryption via stdin
+  /// (avoids copying large video files). Falls back to the pure Dart STORE
+  /// writer when no password is required.
   static Future<void> createZip({
     required List<(String, String)> fileEntries,
     required String outputPath,
     String password = '',
     void Function(double)? onProgress,
   }) async {
+    if (password.isNotEmpty) {
+      await _createEncryptedZip(fileEntries, outputPath, password, onProgress);
+      return;
+    }
+    // No password — use fast streaming Dart writer.
+
     int totalBytes = 0;
     for (final (path, _) in fileEntries) {
       try {
@@ -181,6 +188,43 @@ class ArchiveService {
     } finally {
       await out.close();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+
+  static Future<void> _createEncryptedZip(
+    List<(String, String)> fileEntries,
+    String outputPath,
+    String password,
+    void Function(double)? onProgress,
+  ) async {
+    final sevenZ = await sevenZipPath;
+    int totalBytes = 0;
+    for (final (path, _) in fileEntries) {
+      try {
+        totalBytes += await File(path).length();
+      } catch (_) {}
+    }
+    int processed = 0;
+    for (final (sourcePath, archiveName) in fileEntries) {
+      final process = await Process.start(sevenZ, [
+        'a', '-tzip', '-p$password', '-mem=AES256', outputPath, '-si$archiveName',
+      ]);
+      await for (final chunk in File(sourcePath).openRead()) {
+        process.stdin.add(chunk);
+        processed += chunk.length;
+        if (onProgress != null && totalBytes > 0) {
+          onProgress((processed / totalBytes).clamp(0.0, 0.99));
+        }
+      }
+      await process.stdin.close();
+      final exitCode = await process.exitCode;
+      if (exitCode != 0) {
+        final err = await process.stderr.transform(utf8.decoder).join();
+        throw Exception('7za encryption failed (exit $exitCode): $err');
+      }
+    }
+    onProgress?.call(1.0);
   }
 
   // ---------------------------------------------------------------------------

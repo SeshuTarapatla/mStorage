@@ -14,6 +14,7 @@ import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 
 const _kVideoExts = ['mp4', 'mkv', 'mov', 'avi', 'webm'];
@@ -54,7 +55,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _syncplayFound = false;
   String? _syncplayPath;
   String? _vlcPath;
-
   // Syncplay process & log
   Process? _syncplayProcess;
   final List<String> _syncplayLogs = [];
@@ -75,12 +75,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _configureForHighRes();
     }
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+
+    // Consume any request that was set before this State was created (tab switch).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final path = ref.read(playerOpenRequestProvider);
       if (path != null) {
-        _openVideo(path);
         ref.read(playerOpenRequestProvider.notifier).state = null;
+        _openVideo(path);
       }
     });
   }
@@ -161,18 +163,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await Process.start(_vlcPath!, [_videoPath!]);
   }
 
-  Future<void> _openVideo(String path) async {
+  void _openVideo(String path) {
     setState(() => _videoPath = path);
-    // Wait one frame so the Video widget is mounted before opening media.
-    // Calling open() before VideoController's first render leaves it in a
-    // broken state where playback silently fails on first app launch.
-    final frameReady = Completer<void>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => frameReady.complete());
-    await frameReady.future;
-    if (!mounted) return;
-    await _player.open(Media(path));
-    if (mounted) _player.play();
-    if (mounted) ref.read(settingsProvider.notifier).setLastVideoPath(path);
+    // Defer open() one frame so the Video widget is mounted before media_kit
+    // tries to attach to it (avoids silent playback failure on first launch).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _player.open(Media(path));
+      if (mounted) _player.play();
+      if (mounted) ref.read(settingsProvider.notifier).setLastVideoPath(path);
+    });
   }
 
   void _closeVideo() {
@@ -194,7 +194,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       allowedExtensions: _kVideoExts,
     );
     if (result != null && result.files.isNotEmpty) {
-      await _openVideo(result.files.first.path!);
+      _openVideo(result.files.first.path!);
     }
   }
 
@@ -244,10 +244,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final accent = _palette.primary;
     final settings = ref.watch(settingsProvider);
 
+    // Guard: inactive State's listener must not consume — it would clear the
+    // provider before the newly-created active State's initState callback runs.
     ref.listen<String?>(playerOpenRequestProvider, (_, path) {
-      if (path != null) {
-        _openVideo(path);
+      if (path != null && ref.read(activeTabProvider) == AppTab.player) {
         ref.read(playerOpenRequestProvider.notifier).state = null;
+        _openVideo(path);
       }
     });
 
