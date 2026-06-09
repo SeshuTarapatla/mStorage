@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/services/catalog_cache_manager.dart';
+import '../../core/models/settings_model.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
@@ -296,6 +297,129 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
   }
 
+  static (IconData, String) _tabInfo(AppTab tab) => switch (tab) {
+        AppTab.encode   => (Icons.upload_rounded,        'Encode'),
+        AppTab.decode   => (Icons.download_rounded,      'Decode'),
+        AppTab.player   => (Icons.play_circle_rounded,   'Player'),
+        AppTab.catalog  => (Icons.photo_library_rounded, 'Catalog'),
+        AppTab.settings => (Icons.settings_rounded,      'Settings'),
+        AppTab.admin    => (Icons.admin_panel_settings_rounded, 'Admin'),
+      };
+
+  static List<int> _effectiveOrder(AppSettings settings) {
+    if (settings.tabOrder != null) return settings.tabOrder!;
+    const base = [
+      AppTab.encode,
+      AppTab.decode,
+      AppTab.player,
+      AppTab.catalog,
+      AppTab.settings,
+    ];
+    final startupIdx =
+        settings.startupTab.clamp(0, AppTab.settings.index);
+    return [
+      startupIdx,
+      ...base.map((t) => t.index).where((i) => i != startupIdx),
+    ];
+  }
+
+  Widget _buildLayoutSection(AppSettings settings, Color accent) {
+    final order = _effectiveOrder(settings);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.reorder_rounded, color: accent, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Page Order',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: kTextPrimary)),
+                    const SizedBox(height: 2),
+                    const Text('Drag to reorder sidebar pages.',
+                        style: TextStyle(fontSize: 12, color: kTextSecondary)),
+                  ],
+                ),
+              ),
+              if (settings.tabOrder != null)
+                _ActionButton(
+                  label: 'Reset',
+                  accent: accent,
+                  onTap: () async {
+                    final n = ref.read(settingsProvider.notifier);
+                    await n.resetTabOrder();
+                    await n.setStartupTab(0);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: kSurface2Color,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: kBorderColor),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: 44.0 * order.length,
+              child: ReorderableListView.builder(
+                buildDefaultDragHandles: false,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: order.length,
+                onReorder: (oldIndex, newIndex) {
+                  if (newIndex > oldIndex) newIndex--;
+                  final newOrder = [...order];
+                  newOrder.insert(newIndex, newOrder.removeAt(oldIndex));
+                  ref.read(settingsProvider.notifier).setTabOrder(newOrder);
+                },
+                itemBuilder: (context, index) {
+                  final tab = AppTab.values[order[index]];
+                  final (icon, label) = _tabInfo(tab);
+                  return Container(
+                    key: ValueKey(order[index]),
+                    height: 44,
+                    decoration: index < order.length - 1
+                        ? const BoxDecoration(
+                            border: Border(
+                                bottom: BorderSide(color: kBorderColor)))
+                        : null,
+                    child: Row(
+                      children: [
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
+                            child: Icon(Icons.drag_handle_rounded,
+                                color: kTextMuted, size: 18),
+                          ),
+                        ),
+                        Icon(icon, color: accent, size: 16),
+                        const SizedBox(width: 10),
+                        Text(label,
+                            style: const TextStyle(
+                                fontSize: 13, color: kTextPrimary)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _confirmReset() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -400,6 +524,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 40.ms),
+
+          const SizedBox(height: 20),
+
+          // ── Layout ───────────────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Layout',
+            accent: accent,
+            children: [_buildLayoutSection(settings, accent)],
+          ).animate().fadeIn(duration: 300.ms, delay: 60.ms),
 
           const SizedBox(height: 20),
 
