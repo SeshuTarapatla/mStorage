@@ -3,6 +3,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/services/catalog_cache_manager.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -11,6 +13,8 @@ import '../catalog/catalog_notifier.dart';
 import '../catalog/imdb_service.dart';
 import '../catalog/widgets/catalog_card.dart';
 import '../shell/widgets/shared_widgets.dart';
+import '../updater/update_model.dart';
+import '../updater/update_notifier.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -25,12 +29,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _showPassword = false;
   String? _cacheMessage;
   Timer? _cacheMessageTimer;
+  String? _appVersion;
 
   @override
   void initState() {
     super.initState();
     _passwordCtrl =
         TextEditingController(text: ref.read(settingsProvider).password);
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = info.version);
+    });
   }
 
   @override
@@ -38,6 +46,170 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _passwordCtrl.dispose();
     _cacheMessageTimer?.cancel();
     super.dispose();
+  }
+
+  void _showChangelog(UpdateInfo info) {
+    final accent = _palette.primary;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          "What's new in v${info.version}",
+          style: const TextStyle(color: kTextPrimary, fontSize: 16),
+        ),
+        content: SizedBox(
+          width: 480,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300),
+            child: Markdown(
+              data: info.releaseNotes.isNotEmpty ? info.releaseNotes : '_No release notes available._',
+              shrinkWrap: true,
+              padding: const EdgeInsets.only(top: 4),
+              styleSheet: MarkdownStyleSheet(
+                p: const TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
+                h1: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: accent),
+                h2: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: accent),
+                h3: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kTextPrimary),
+                strong: const TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary),
+                em: const TextStyle(fontStyle: FontStyle.italic, color: kTextSecondary),
+                code: const TextStyle(fontSize: 11, color: kTextPrimary, fontFamily: 'monospace'),
+                codeblockDecoration: BoxDecoration(
+                  color: kSurface2Color,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                listBullet: const TextStyle(fontSize: 12, color: kTextSecondary),
+                horizontalRuleDecoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: kBorderColor)),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: TextStyle(color: accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpdateControl(UpdateState updateState) {
+    final accent = _palette.primary;
+    switch (updateState.status) {
+      case UpdateStatus.idle:
+        return _ActionButton(
+          label: 'Check Now',
+          accent: accent,
+          onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
+        );
+      case UpdateStatus.upToDate:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ActionButton(
+              label: 'Check Now',
+              accent: accent,
+              onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
+            ),
+            const SizedBox(height: 4),
+            Text('Already up to date',
+                style: TextStyle(fontSize: 11, color: accent)),
+          ],
+        );
+      case UpdateStatus.checking:
+        return SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+        );
+      case UpdateStatus.available:
+        final info = updateState.info!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ActionButton(
+              label: 'Download v${info.version}',
+              accent: accent,
+              onTap: () => ref.read(updateProvider.notifier).downloadUpdate(),
+            ),
+            if (info.releaseNotes.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => _showChangelog(info),
+                child: Text(
+                  'View changelog',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: accent,
+                    decoration: TextDecoration.underline,
+                    decorationColor: accent,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      case UpdateStatus.downloading:
+        return SizedBox(
+          width: 140,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Downloading ${(updateState.downloadProgress * 100).round()}%',
+                    style: TextStyle(fontSize: 11, color: accent),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: updateState.downloadProgress,
+                  backgroundColor: accent.withValues(alpha: 0.15),
+                  valueColor: AlwaysStoppedAnimation(accent),
+                  minHeight: 3,
+                ),
+              ),
+            ],
+          ),
+        );
+      case UpdateStatus.readyToInstall:
+        return _ActionButton(
+          label: 'Install Now',
+          accent: accent,
+          onTap: () => ref.read(updateProvider.notifier).launchInstaller(),
+        );
+      case UpdateStatus.error:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              updateState.errorMessage ?? 'Unknown error',
+              style: const TextStyle(fontSize: 11, color: kDanger),
+              textAlign: TextAlign.end,
+            ),
+            const SizedBox(height: 4),
+            _ActionButton(
+              label: 'Retry',
+              accent: accent,
+              onTap: () => ref.read(updateProvider.notifier).checkForUpdate(),
+            ),
+          ],
+        );
+    }
   }
 
   Future<void> _confirmClearCache() async {
@@ -117,6 +289,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
+    final updateState = ref.watch(updateProvider);
+    final updatePending = updateState.status == UpdateStatus.available ||
+        updateState.status == UpdateStatus.downloading ||
+        updateState.status == UpdateStatus.readyToInstall;
+
+    final updatesGroup = _SettingsGroup(
+      label: 'Updates',
+      accent: accent,
+      children: [
+        _SettingRow(
+          icon: Icons.system_update_rounded,
+          title: 'Check for Updates',
+          subtitle: 'mStorage v${_appVersion ?? '...'}  ·  Currently installed',
+          accent: accent,
+          control: _buildUpdateControl(updateState),
+        ),
+      ],
+    ).animate().fadeIn(duration: 300.ms, delay: 40.ms);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
@@ -130,6 +320,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             color: accent,
           ),
           const SizedBox(height: 32),
+
+          if (updatePending) ...[
+            updatesGroup,
+            const SizedBox(height: 20),
+          ],
 
           // ── General ──────────────────────────────────────────────────────
           _SettingsGroup(
@@ -343,6 +538,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          if (!updatePending) ...[
+            // ── Updates ────────────────────────────────────────────────────
+            updatesGroup,
+            const SizedBox(height: 20),
+          ],
+
           // ── Cache ─────────────────────────────────────────────────────────
           _SettingsGroup(
             label: 'Cache',
@@ -427,9 +628,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 Divider(color: kBorderColor, height: 1),
                 const SizedBox(height: 16),
-                const Text(
-                  'mStorage  v1.0.0',
-                  style: TextStyle(
+                Text(
+                  'mStorage  v${_appVersion ?? '...'}',
+                  style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: kTextMuted),

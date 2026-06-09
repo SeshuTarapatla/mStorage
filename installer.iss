@@ -7,7 +7,7 @@
 ; Output: installer\mStorage_Setup.exe
 
 #define AppName        "mStorage"
-#define AppVersion     "1.1.1"
+#define AppVersion     "1.2.0"
 #define AppPublisher   "Seshu Tarapatla"
 #define AppURL         "https://github.com/SeshuTarapatla/mStorage"
 #define AppExeName     "m_storage.exe"
@@ -40,6 +40,9 @@ WizardStyle=modern
 MinVersion=10.0
 ; Install to Program Files, requires UAC — app appears in Apps & features for all users
 PrivilegesRequired=admin
+; Close the running app automatically before installing so it can overwrite the exe.
+CloseApplications=yes
+CloseApplicationsFilter={#AppExeName}
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]

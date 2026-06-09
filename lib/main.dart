@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -5,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/shell/app_shell.dart';
+import 'features/updater/update_notifier.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +32,11 @@ void main() async {
   );
 
   runApp(UncontrolledProviderScope(container: container, child: const MStorageApp()));
+
+  // Background update check after first frame — single HTTP call, non-blocking.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(container.read(updateProvider.notifier).checkForUpdate());
+  });
 }
 
 class MStorageApp extends ConsumerWidget {

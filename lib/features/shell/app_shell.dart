@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../core/services/gh_auth_service.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../updater/update_model.dart';
+import '../updater/update_notifier.dart';
 import '../admin/admin_screen.dart';
 import '../decode/decode_notifier.dart';
 import '../encode/encode_notifier.dart';
@@ -71,6 +74,102 @@ class _AppShellState extends ConsumerState<AppShell>
     super.dispose();
   }
 
+  void _showUpdateDialog(BuildContext context, UpdateInfo info, TabPalette palette) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: palette.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.system_update_rounded, color: palette.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Update available',
+                    style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+                Text('v${info.version} is ready to download',
+                    style: const TextStyle(color: kTextSecondary, fontSize: 12, fontWeight: FontWeight.normal)),
+              ],
+            ),
+          ],
+        ),
+        content: info.releaseNotes.isNotEmpty
+            ? SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("What's new",
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: palette.primary, letterSpacing: 0.8)),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: Markdown(
+                        data: info.releaseNotes,
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.only(top: 4),
+                        styleSheet: _mdStyle(palette),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : null,
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(updateProvider.notifier).dismissForToday();
+            },
+            child: const Text('Later', style: TextStyle(color: kTextMuted)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(activeTabProvider.notifier).state = AppTab.settings;
+              ref.read(updateProvider.notifier).downloadUpdate();
+            },
+            style: TextButton.styleFrom(foregroundColor: palette.primary),
+            child: Text('Update Now',
+                style: TextStyle(color: palette.primary, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  MarkdownStyleSheet _mdStyle(TabPalette palette) => MarkdownStyleSheet(
+        p: const TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
+        h1: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: palette.primary),
+        h2: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: palette.primary),
+        h3: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kTextPrimary),
+        strong: const TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary),
+        em: const TextStyle(fontStyle: FontStyle.italic, color: kTextSecondary),
+        code: const TextStyle(fontSize: 11, color: kTextPrimary, fontFamily: 'monospace'),
+        codeblockDecoration: BoxDecoration(
+          color: kSurface2Color,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: palette.primary, width: 3)),
+        ),
+        listBullet: const TextStyle(fontSize: 12, color: kTextSecondary),
+        horizontalRuleDecoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: kBorderColor)),
+        ),
+      );
+
   Widget _screenFor(AppTab tab) => switch (tab) {
     AppTab.encode   => const EncodeScreen(),
     AppTab.decode   => const DecodeScreen(),
@@ -90,6 +189,17 @@ class _AppShellState extends ConsumerState<AppShell>
       if (prev != null && prev != next) {
         setState(() => _exitingTab = prev);
         _ctrl.forward(from: 0);
+      }
+    });
+
+    // Show update dialog once on the day a new version is detected.
+    ref.listen(updateProvider, (prev, next) {
+      if (prev?.status != UpdateStatus.available &&
+          next.status == UpdateStatus.available &&
+          !next.dismissedToday) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showUpdateDialog(context, next.info!, palette);
+        });
       }
     });
 
@@ -333,6 +443,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     final encodeRunning = ref.watch(encodeProvider).isRunning;
     final decodeRunning = ref.watch(decodeProvider).isRunning;
     final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
+    final updateStatus = ref.watch(updateProvider).status;
 
     final items = isAdmin ? [..._baseItems, _adminItem] : _baseItems;
 
@@ -355,6 +466,10 @@ class _SidebarState extends ConsumerState<_Sidebar> {
               isHovered: _hovered == item.$1,
               isRunning: (item.$1 == AppTab.encode && encodeRunning) ||
                   (item.$1 == AppTab.decode && decodeRunning),
+              hasBadge: item.$1 == AppTab.settings &&
+                  (updateStatus == UpdateStatus.available ||
+                   updateStatus == UpdateStatus.downloading ||
+                   updateStatus == UpdateStatus.readyToInstall),
               palette: item.$1.palette,
               onTap: () =>
                   ref.read(activeTabProvider.notifier).state = item.$1,
@@ -374,6 +489,7 @@ class _SidebarItem extends StatelessWidget {
   final bool isActive;
   final bool isHovered;
   final bool isRunning;
+  final bool hasBadge;
   final TabPalette palette;
   final VoidCallback onTap;
   final ValueChanged<bool> onHover;
@@ -388,6 +504,7 @@ class _SidebarItem extends StatelessWidget {
     required this.palette,
     required this.onTap,
     required this.onHover,
+    this.hasBadge = false,
   });
 
   @override
@@ -457,6 +574,16 @@ class _SidebarItem extends StatelessWidget {
                       )
                           .animate(onPlay: (c) => c.repeat(reverse: true))
                           .fade(begin: 0.3, end: 1.0, duration: 600.ms),
+                    ),
+                  if (hasBadge)
+                    Positioned(
+                      top: -1,
+                      right: -1,
+                      child: Icon(
+                        Icons.download_rounded,
+                        size: 15,
+                        color: palette.primary,
+                      ),
                     ),
                 ],
               ),
