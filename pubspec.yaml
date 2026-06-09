@@ -1,7 +1,7 @@
 name: m_storage
 description: "mStorage — hide movies inside mask MP4 containers."
 publish_to: 'none'
-version: 1.2.0+4
+version: 0.2.0+4
 
 environment:
   sdk: ^3.11.5

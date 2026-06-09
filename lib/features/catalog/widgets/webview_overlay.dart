@@ -265,6 +265,26 @@ class _WebViewOverlayState extends State<WebViewOverlay> {
                       color: kBgColor,
                       child: Center(child: CircularProgressIndicator(color: palette.primary)),
                     ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      color: kBgColor.withValues(alpha: 0.82),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.keyboard_rounded, size: 14, color: palette.primary),
+                          const SizedBox(width: 7),
+                          Text(
+                            'If the Download button doesn\'t respond, press  Shift + D  as an alternative',
+                            style: TextStyle(fontSize: 13, color: palette.primary, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   ]),
               ),
             ),
