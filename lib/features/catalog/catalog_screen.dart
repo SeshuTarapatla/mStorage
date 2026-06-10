@@ -41,6 +41,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
   Set<String> _filterLanguages = {};
   Set<String> _filterGenres = {};
   Set<int> _filterYears = {};
+  bool _filterDownloaded = false;
 
   // Expanded card overlay state
   CatalogEntry? _expandedEntry;
@@ -145,7 +146,9 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     final sheetUrl = ref.watch(sheetUrlProvider);
     final catalogState = ref.watch(catalogProvider);
     final downloadState = ref.watch(downloadProvider);
-    final historyCount = ref.watch(downloadHistoryProvider).length;
+    final downloadHistory = ref.watch(downloadHistoryProvider);
+    final historyCount = downloadHistory.length;
+    final downloadedTitles = downloadHistory.map((r) => r.title).toSet();
 
     if (sheetUrl != null && catalogState is CatalogIdle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -227,6 +230,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                 filterLanguages: _filterLanguages,
                 filterGenres: _filterGenres,
                 filterYears: _filterYears,
+                filterDownloaded: _filterDownloaded,
                 palette: palette,
                 onSortChanged: (mode, asc) {
                   setState(() { _sortMode = mode; _sortAsc = asc; });
@@ -238,10 +242,13 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                     setState(() => _filterGenres = v),
                 onYearsChanged: (v) =>
                     setState(() => _filterYears = v),
+                onToggleDownloaded: () =>
+                    setState(() => _filterDownloaded = !_filterDownloaded),
                 onClearFilters: () => setState(() {
                   _filterLanguages = {};
                   _filterGenres = {};
                   _filterYears = {};
+                  _filterDownloaded = false;
                 }),
               ),
               const SizedBox(height: 12),
@@ -279,6 +286,8 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                               filterLanguages: _filterLanguages,
                               filterGenres: _filterGenres,
                               filterYears: _filterYears,
+                              filterDownloaded: _filterDownloaded,
+                              downloadedTitles: downloadedTitles,
                               palette: palette,
                               onOpenInBrowser: _openWebView,
                               onCardExpand: _onCardExpand,
@@ -345,6 +354,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
             animation: _expandAnim,
             palette: palette,
             cardKey: _expandedCardKey,
+            isDownloaded: downloadedTitles.contains(_expandedEntry!.title),
             onClose: _closeExpanded,
             onOpenInBrowser: () {
               _closeExpanded();
@@ -364,12 +374,51 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
         url: entry.videoUrl,
         title: entry.title,
         onDownloadRequested: (url, filename) {
-          ref.read(downloadProvider.notifier).enqueue(
-                url,
-                filename ?? '',
-                entry.title,
-                entry.thumbnailUrl,
+          final fname = filename ?? '';
+          final history = ref.read(downloadHistoryProvider);
+          final existing = history
+              .where((r) => r.filename == fname && File(r.filePath).existsSync())
+              .firstOrNull;
+          if (existing != null) {
+            // Defer the dialog to the next frame — onDownloadRequested fires
+            // synchronously inside _triggerDownload, which has already called
+            // Navigator.pop() to close the WebView. Pushing a new route in the
+            // same stack frame corrupts the Navigator before the pop completes.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: kSurfaceColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Already Downloaded',
+                      style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+                  content: const Text(
+                    'This video is already in your downloads. Downloading again will overwrite the existing file.',
+                    style: TextStyle(color: kTextSecondary, fontSize: 13),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel', style: TextStyle(color: kTextMuted)),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        ref.read(downloadProvider.notifier).enqueue(
+                              url, fname, entry.title, entry.thumbnailUrl);
+                      },
+                      child: Text('Download Anyway',
+                          style: TextStyle(color: AppTab.catalog.palette.primary, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
               );
+            });
+          } else {
+            ref.read(downloadProvider.notifier).enqueue(
+                  url, fname, entry.title, entry.thumbnailUrl);
+          }
         },
       ),
     );
@@ -653,6 +702,8 @@ class _Body extends StatelessWidget {
   final Set<String> filterLanguages;
   final Set<String> filterGenres;
   final Set<int> filterYears;
+  final bool filterDownloaded;
+  final Set<String> downloadedTitles;
   final TabPalette palette;
   final ValueChanged<CatalogEntry> onOpenInBrowser;
   final void Function(CatalogEntry, Rect) onCardExpand;
@@ -665,6 +716,8 @@ class _Body extends StatelessWidget {
     required this.filterLanguages,
     required this.filterGenres,
     required this.filterYears,
+    this.filterDownloaded = false,
+    this.downloadedTitles = const {},
     required this.palette,
     required this.onOpenInBrowser,
     required this.onCardExpand,
@@ -679,6 +732,7 @@ class _Body extends StatelessWidget {
       CatalogLoaded(:final entries)  => _Grid(
           entries: _filterAndSort(entries),
           allEntries: entries,
+          downloadedTitles: downloadedTitles,
           palette: palette,
           onOpenInBrowser: onOpenInBrowser,
           onCardExpand: onCardExpand,
@@ -698,6 +752,7 @@ class _Body extends StatelessWidget {
       if (filterLanguages.isNotEmpty && !filterLanguages.contains(e.language)) return false;
       if (filterGenres.isNotEmpty && !e.genres.any(filterGenres.contains)) return false;
       if (filterYears.isNotEmpty && !filterYears.contains(e.date?.year)) return false;
+      if (filterDownloaded && !downloadedTitles.contains(e.title)) return false;
       return true;
     }).toList();
 
@@ -716,6 +771,7 @@ class _Body extends StatelessWidget {
 class _Grid extends StatefulWidget {
   final List<CatalogEntry> entries;
   final List<CatalogEntry> allEntries;
+  final Set<String> downloadedTitles;
   final TabPalette palette;
   final ValueChanged<CatalogEntry> onOpenInBrowser;
   final void Function(CatalogEntry, Rect) onCardExpand;
@@ -723,6 +779,7 @@ class _Grid extends StatefulWidget {
   const _Grid({
     required this.entries,
     required this.allEntries,
+    this.downloadedTitles = const {},
     required this.palette,
     required this.onOpenInBrowser,
     required this.onCardExpand,
@@ -814,6 +871,7 @@ class _GridState extends State<_Grid> {
           key: ValueKey(entry.imdbId.isNotEmpty ? entry.imdbId : entry.title),
           entry: entry,
           aspectRatio: _aspectRatio,
+          isDownloaded: widget.downloadedTitles.contains(entry.title),
           onOpenInBrowser: () => widget.onOpenInBrowser(entry),
           onExpand: (rect) => widget.onCardExpand(entry, rect),
         )
@@ -836,6 +894,7 @@ class _CardDetail extends StatelessWidget {
   final AnimationController animation;
   final TabPalette palette;
   final GlobalKey<CatalogCardExpandedState> cardKey;
+  final bool isDownloaded;
   final VoidCallback onClose;
   final VoidCallback onOpenInBrowser;
 
@@ -846,6 +905,7 @@ class _CardDetail extends StatelessWidget {
     required this.animation,
     required this.palette,
     required this.cardKey,
+    this.isDownloaded = false,
     required this.onClose,
     required this.onOpenInBrowser,
   });
@@ -884,6 +944,7 @@ class _CardDetail extends StatelessWidget {
               key: cardKey,
               entry: entry,
               palette: palette,
+              isDownloaded: isDownloaded,
               onClose: onClose,
               onOpenInBrowser: onOpenInBrowser,
               maxHeight: expandedMaxH,
@@ -1474,11 +1535,13 @@ class _SortFilterBar extends StatelessWidget {
   final Set<String> filterLanguages;
   final Set<String> filterGenres;
   final Set<int> filterYears;
+  final bool filterDownloaded;
   final TabPalette palette;
   final void Function(_SortMode, bool) onSortChanged;
   final void Function(Set<String>) onLanguagesChanged;
   final void Function(Set<String>) onGenresChanged;
   final void Function(Set<int>) onYearsChanged;
+  final VoidCallback onToggleDownloaded;
   final VoidCallback onClearFilters;
 
   const _SortFilterBar({
@@ -1488,11 +1551,13 @@ class _SortFilterBar extends StatelessWidget {
     required this.filterLanguages,
     required this.filterGenres,
     required this.filterYears,
+    this.filterDownloaded = false,
     required this.palette,
     required this.onSortChanged,
     required this.onLanguagesChanged,
     required this.onGenresChanged,
     required this.onYearsChanged,
+    required this.onToggleDownloaded,
     required this.onClearFilters,
   });
 
@@ -1507,7 +1572,7 @@ class _SortFilterBar extends StatelessWidget {
         ..sort((a, b) => b.compareTo(a));
 
     final hasFilters = filterLanguages.isNotEmpty ||
-        filterGenres.isNotEmpty || filterYears.isNotEmpty;
+        filterGenres.isNotEmpty || filterYears.isNotEmpty || filterDownloaded;
 
     return Row(
       children: [
@@ -1543,7 +1608,7 @@ class _SortFilterBar extends StatelessWidget {
           ),
           const SizedBox(width: 6),
         ],
-        if (years.isNotEmpty)
+        if (years.isNotEmpty) ...[
           _FilterBtn(
             label: 'Year',
             options: years.map((y) => '$y').toList(),
@@ -1551,6 +1616,14 @@ class _SortFilterBar extends StatelessWidget {
             palette: palette,
             onChanged: (s) => onYearsChanged(s.map(int.parse).toSet()),
           ),
+          const SizedBox(width: 6),
+        ],
+        _ToggleFilterBtn(
+          label: 'Downloaded',
+          active: filterDownloaded,
+          palette: palette,
+          onTap: onToggleDownloaded,
+        ),
       ],
     );
   }
@@ -1602,6 +1675,51 @@ class _SortBtn extends StatelessWidget {
                 size: 11, color: color,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _ToggleFilterBtn extends StatelessWidget {
+  final String label;
+  final bool active;
+  final TabPalette palette;
+  final VoidCallback onTap;
+
+  const _ToggleFilterBtn({
+    required this.label,
+    required this.active,
+    required this.palette,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? palette.primary : kTextSecondary;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? palette.primary.withValues(alpha: 0.1) : kSurfaceColor,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: active ? palette.primary.withValues(alpha: 0.45) : kBorderColor,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (active) ...[
+              Icon(Icons.download_done_rounded, size: 11, color: color),
+              const SizedBox(width: 4),
+            ],
+            Text(label, style: TextStyle(fontSize: 12, color: color)),
           ],
         ),
       ),
