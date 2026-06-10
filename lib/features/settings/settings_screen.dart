@@ -306,25 +306,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         AppTab.admin    => (Icons.admin_panel_settings_rounded, 'Admin'),
       };
 
-  static List<int> _effectiveOrder(AppSettings settings) {
+  static int _effectiveStartupTab(AppSettings settings, String? sheetUrl) {
+    if (settings.startupTab != 0) return settings.startupTab;
+    return sheetUrl != null ? AppTab.catalog.index : AppTab.encode.index;
+  }
+
+  static List<int> _effectiveOrder(AppSettings settings, String? sheetUrl) {
     if (settings.tabOrder != null) return settings.tabOrder!;
-    const base = [
+    const defaultOrder = [
       AppTab.encode,
       AppTab.decode,
       AppTab.player,
       AppTab.catalog,
       AppTab.settings,
     ];
-    final startupIdx =
-        settings.startupTab.clamp(0, AppTab.settings.index);
-    return [
-      startupIdx,
-      ...base.map((t) => t.index).where((i) => i != startupIdx),
-    ];
+    if (settings.startupTab != 0) {
+      final startupIdx = settings.startupTab.clamp(0, AppTab.settings.index);
+      return [
+        startupIdx,
+        ...defaultOrder.map((t) => t.index).where((i) => i != startupIdx),
+      ];
+    }
+    if (sheetUrl != null) {
+      return [
+        AppTab.catalog.index,
+        AppTab.player.index,
+        AppTab.encode.index,
+        AppTab.decode.index,
+        AppTab.settings.index,
+      ];
+    }
+    return defaultOrder.map((t) => t.index).toList();
   }
 
-  Widget _buildLayoutSection(AppSettings settings, Color accent) {
-    final order = _effectiveOrder(settings);
+  Widget _buildLayoutSection(AppSettings settings, Color accent, String? sheetUrl) {
+    final order = _effectiveOrder(settings, sheetUrl);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
@@ -455,6 +471,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    final sheetUrl = ref.watch(sheetUrlProvider);
     final accent = _palette.primary;
     final updateState = ref.watch(updateProvider);
     final updatePending = updateState.status == UpdateStatus.available ||
@@ -512,7 +529,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         padding: const EdgeInsets.only(left: 6),
                         child: _ChipButton(
                           label: tab.name[0].toUpperCase() + tab.name.substring(1),
-                          selected: settings.startupTab == tab.index,
+                          selected: _effectiveStartupTab(settings, sheetUrl) == tab.index,
                           accent: accent,
                           onTap: () => ref
                               .read(settingsProvider.notifier)
@@ -531,7 +548,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsGroup(
             label: 'Layout',
             accent: accent,
-            children: [_buildLayoutSection(settings, accent)],
+            children: [_buildLayoutSection(settings, accent, sheetUrl)],
           ).animate().fadeIn(duration: 300.ms, delay: 60.ms),
 
           const SizedBox(height: 20),

@@ -16,14 +16,18 @@ import '../encode/encode_screen.dart';
 import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
 import '../catalog/catalog_screen.dart';
+import '../catalog/catalog_notifier.dart';
 import '../settings/settings_screen.dart';
 
 // Reads startupTab from already-loaded settings (main() loads before runApp).
 // ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
 final activeTabProvider = StateProvider<AppTab>((ref) {
-  final idx = ref.read(settingsProvider).startupTab;
-  // Clamp to public tabs only — admin is the last enum value and not a startup option.
-  return AppTab.values[idx.clamp(0, AppTab.settings.index)];
+  final settings = ref.read(settingsProvider);
+  final idx = settings.startupTab;
+  if (idx != 0) return AppTab.values[idx.clamp(0, AppTab.settings.index)];
+  // At default (0): open Catalog if sheet URL is configured, otherwise Encode.
+  final sheetUrl = ref.read(sheetUrlProvider);
+  return sheetUrl != null ? AppTab.catalog : AppTab.encode;
 });
 
 final ghAuthProvider = FutureProvider<bool>(
@@ -451,13 +455,29 @@ class _SidebarState extends ConsumerState<_Sidebar> {
           .where((i) => i <= AppTab.settings.index)
           .map((i) => _baseItems.firstWhere((item) => item.$1.index == i))
           .toList();
-    } else {
+    } else if (settings.startupTab != 0) {
+      // User explicitly picked a startup tab — honor it.
       final startupTab =
           AppTab.values[settings.startupTab.clamp(0, AppTab.settings.index)];
       base = [
         ..._baseItems.where((i) => i.$1 == startupTab),
         ..._baseItems.where((i) => i.$1 != startupTab),
       ];
+    } else {
+      // Both tabOrder and startupTab are at defaults (reset state).
+      // Use URL-aware ordering: if sheet URL is configured, surface Catalog first.
+      final sheetUrl = ref.watch(sheetUrlProvider);
+      if (sheetUrl != null) {
+        base = [
+          _baseItems.firstWhere((i) => i.$1 == AppTab.catalog),
+          _baseItems.firstWhere((i) => i.$1 == AppTab.player),
+          _baseItems.firstWhere((i) => i.$1 == AppTab.encode),
+          _baseItems.firstWhere((i) => i.$1 == AppTab.decode),
+          _baseItems.firstWhere((i) => i.$1 == AppTab.settings),
+        ];
+      } else {
+        base = List.of(_baseItems);
+      }
     }
     final items = isAdmin ? [...base, _adminItem] : base;
 
