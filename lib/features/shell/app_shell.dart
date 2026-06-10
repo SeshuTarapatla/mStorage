@@ -130,7 +130,7 @@ class _AppShellState extends ConsumerState<AppShell>
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              ref.read(updateProvider.notifier).dismissForToday();
+              ref.read(updateProvider.notifier).dismiss();
             },
             child: const Text('Later', style: TextStyle(color: kTextMuted)),
           ),
@@ -192,11 +192,10 @@ class _AppShellState extends ConsumerState<AppShell>
       }
     });
 
-    // Show update dialog once on the day a new version is detected.
+    // Show update dialog every time a new version is detected on app start.
     ref.listen(updateProvider, (prev, next) {
       if (prev?.status != UpdateStatus.available &&
-          next.status == UpdateStatus.available &&
-          !next.dismissedToday) {
+          next.status == UpdateStatus.available) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _showUpdateDialog(context, next.info!, palette);
         });

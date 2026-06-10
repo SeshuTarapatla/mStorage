@@ -37,14 +37,11 @@ class UpdateState {
   final UpdateInfo? info;
   final double downloadProgress;
   final String? errorMessage;
-  // True when the user already dismissed the popup today — show badge only.
-  final bool dismissedToday;
 
   const UpdateState({
     this.status = UpdateStatus.idle,
     this.info,
     this.downloadProgress = 0.0,
     this.errorMessage,
-    this.dismissedToday = false,
   });
 }

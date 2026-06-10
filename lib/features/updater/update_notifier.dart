@@ -1,12 +1,9 @@
 import 'dart:async' show unawaited;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'update_model.dart';
 import 'update_service.dart';
-
-const _kDismissedDateKey = 'update_dismissed_date';
 
 final updateProvider =
     NotifierProvider<UpdateNotifier, UpdateState>(UpdateNotifier.new);
@@ -16,23 +13,6 @@ class UpdateNotifier extends Notifier<UpdateState> {
 
   @override
   UpdateState build() => const UpdateState();
-
-  static String _today() => DateTime.now().toIso8601String().substring(0, 10);
-
-  Future<bool> _isDismissedToday() async {
-    final prefs = await SharedPreferences.getInstance();
-    return (prefs.getString(_kDismissedDateKey) ?? '') == _today();
-  }
-
-  Future<void> dismissForToday() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kDismissedDateKey, _today());
-    state = UpdateState(
-      status: state.status,
-      info: state.info,
-      dismissedToday: true,
-    );
-  }
 
   Future<void> checkForUpdate() async {
     if (state.status == UpdateStatus.checking) return;
@@ -45,12 +25,7 @@ class UpdateNotifier extends Notifier<UpdateState> {
         state = const UpdateState(status: UpdateStatus.upToDate);
       } else if (UpdateService.isNewer(info.version, packageInfo.version)) {
         if (info.assetUrl.isEmpty) throw Exception('No .exe asset found in release');
-        final dismissed = await _isDismissedToday();
-        state = UpdateState(
-          status: UpdateStatus.available,
-          info: info,
-          dismissedToday: dismissed,
-        );
+        state = UpdateState(status: UpdateStatus.available, info: info);
       } else {
         // Same or older — store info so release notes are available in the UI.
         state = UpdateState(status: UpdateStatus.upToDate, info: info);

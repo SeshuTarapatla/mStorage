@@ -13,6 +13,7 @@ import '../models/catalog_entry.dart';
 class CatalogCard extends StatefulWidget {
   final CatalogEntry entry;
   final double aspectRatio;
+  final bool isDownloaded;
   final VoidCallback onOpenInBrowser;
   final void Function(Rect globalRect) onExpand;
 
@@ -20,6 +21,7 @@ class CatalogCard extends StatefulWidget {
     super.key,
     required this.entry,
     required this.aspectRatio,
+    this.isDownloaded = false,
     required this.onOpenInBrowser,
     required this.onExpand,
   });
@@ -62,10 +64,24 @@ class _CatalogCardState extends State<CatalogCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Thumbnail(
-                url: widget.entry.thumbnailUrl,
-                aspectRatio: widget.aspectRatio,
-                rating: widget.entry.imdbRating,
+              Stack(
+                children: [
+                  _Thumbnail(
+                    url: widget.entry.thumbnailUrl,
+                    aspectRatio: widget.aspectRatio,
+                    rating: widget.entry.imdbRating,
+                  ),
+                  if (widget.isDownloaded)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Icon(
+                        Icons.download_done_rounded,
+                        size: 16,
+                        color: palette.primary,
+                      ),
+                    ),
+                ],
               ),
               Padding(
                 padding: const EdgeInsets.all(10),
@@ -127,6 +143,7 @@ class _CatalogCardState extends State<CatalogCard> {
 class CatalogCardExpanded extends StatefulWidget {
   final CatalogEntry entry;
   final TabPalette palette;
+  final bool isDownloaded;
   final VoidCallback onClose;
   final VoidCallback onOpenInBrowser;
   final double maxHeight;
@@ -135,6 +152,7 @@ class CatalogCardExpanded extends StatefulWidget {
     super.key,
     required this.entry,
     required this.palette,
+    this.isDownloaded = false,
     required this.onClose,
     required this.onOpenInBrowser,
     this.maxHeight = 640,
@@ -420,6 +438,18 @@ class CatalogCardExpandedState extends State<CatalogCardExpanded> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (widget.isDownloaded) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.download_done_rounded, size: 13, color: Color(0xFF69F0AE)),
+                        SizedBox(width: 5),
+                        Text('Already downloaded',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF69F0AE))),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Button — always visible at the bottom
                   SizedBox(
                     width: double.infinity,

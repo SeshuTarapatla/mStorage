@@ -42,19 +42,30 @@ The resulting file is a valid MP4: it plays as a short clip in any media player,
 - Stop Syncplay kills the entire process tree (including the VLC child process)
 - Collapsible Syncplay console log
 
+### Catalog
+- Paste a Google Sheets URL to load a browsable video catalog
+- Masonry grid of cards with poster thumbnails, IMDB ratings, genres, and release dates
+- Expand any card for a full detail view with a slideshow, plot, and tags
+- Sort by title, date, or rating; filter by language, genre, year, or downloaded status
+- Open any entry in an embedded WebView and download directly from the page
+- Re-download protection — prompts before overwriting an existing file
+- Downloaded indicator (green tick badge) on cards already in your download history
+- Download history panel with file size, open-in-Explorer, play, and decode shortcuts
+- Queue-based downloader with progress bar and speed readout
+
 ### Settings
 - Archive encryption password
 - Custom encode/decode output directories
 - Aspect ratio preservation toggle and mask duration
-- Startup page picker
+- Startup page picker with drag-to-reorder sidebar pages
 - Syncplay username, room, port
 - Danger Zone — reset all settings to defaults
 
 ### Shell
-- `Ctrl+1`–`4` keyboard shortcuts to switch tabs (Encode / Decode / Player / Settings)
 - Animated pulsing dot on sidebar while encode or decode is running
 - Per-tab accent colours with smooth transitions
 - Custom frameless title bar with drag region
+- Update notifier — prompts on every launch when a newer release is available
 
 ---
 
