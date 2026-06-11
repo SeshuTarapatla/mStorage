@@ -17,6 +17,7 @@ import '../decode/decode_screen.dart';
 import '../player/player_screen.dart';
 import '../catalog/catalog_screen.dart';
 import '../catalog/catalog_notifier.dart';
+import '../catalog/series_notifier.dart' show catalogSubPaletteProvider;
 import '../settings/settings_screen.dart';
 
 // Reads startupTab from already-loaded settings (main() loads before runApp).
@@ -186,7 +187,10 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final activeTab = ref.watch(activeTabProvider);
-    final palette = activeTab.palette;
+    final subPalette = ref.watch(catalogSubPaletteProvider);
+    final palette = (activeTab == AppTab.catalog && subPalette != null)
+        ? subPalette
+        : activeTab.palette;
 
     // Trigger animation whenever the active tab changes.
     ref.listen(activeTabProvider, (prev, next) {
@@ -504,7 +508,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
                   (updateStatus == UpdateStatus.available ||
                    updateStatus == UpdateStatus.downloading ||
                    updateStatus == UpdateStatus.readyToInstall),
-              palette: item.$1.palette,
+              palette: widget.activeTab == item.$1 ? widget.palette : item.$1.palette,
               onTap: () =>
                   ref.read(activeTabProvider.notifier).state = item.$1,
               onHover: (v) =>

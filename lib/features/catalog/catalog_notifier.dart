@@ -273,12 +273,14 @@ class _DownloadJob {
   final String url;
   final String suggestedFilename;
   final String title;
+  final String? subtitle;
   final String thumbnailUrl;
 
   const _DownloadJob({
     required this.url,
     required this.suggestedFilename,
     required this.title,
+    this.subtitle,
     required this.thumbnailUrl,
   });
 }
@@ -289,6 +291,7 @@ class _DownloadJob {
 
 class DownloadRecord {
   final String title;
+  final String? subtitle;
   final String filename;
   final String filePath;
   final String thumbnailUrl;
@@ -297,6 +300,7 @@ class DownloadRecord {
 
   const DownloadRecord({
     required this.title,
+    this.subtitle,
     required this.filename,
     required this.filePath,
     required this.thumbnailUrl,
@@ -306,6 +310,7 @@ class DownloadRecord {
 
   factory DownloadRecord.fromJson(Map<String, dynamic> j) => DownloadRecord(
         title: j['title'] as String? ?? '',
+        subtitle: j['subtitle'] as String?,
         filename: j['filename'] as String? ?? '',
         filePath: j['filePath'] as String? ?? '',
         thumbnailUrl: j['thumbnailUrl'] as String? ?? '',
@@ -315,6 +320,7 @@ class DownloadRecord {
 
   Map<String, dynamic> toJson() => {
         'title': title,
+        if (subtitle != null) 'subtitle': subtitle,
         'filename': filename,
         'filePath': filePath,
         'thumbnailUrl': thumbnailUrl,
@@ -395,6 +401,7 @@ sealed class DownloadState {}
 class DownloadIdle extends DownloadState {}
 
 class DownloadActive extends DownloadState {
+  final String title;
   final String filename;
   final int receivedBytes;
   final int totalBytes;
@@ -402,6 +409,7 @@ class DownloadActive extends DownloadState {
   final int queueRemaining;
 
   DownloadActive({
+    required this.title,
     required this.filename,
     required this.receivedBytes,
     required this.totalBytes,
@@ -447,12 +455,13 @@ class DownloadNotifier extends Notifier<DownloadState> {
 
   /// Adds a job to the queue and starts processing if not already running.
   void enqueue(String url, String suggestedFilename, String title,
-      String thumbnailUrl) {
+      String thumbnailUrl, {String? subtitle}) {
     if (!_running) _cancelled = false;
     _queue.add(_DownloadJob(
       url: url,
       suggestedFilename: suggestedFilename,
       title: title,
+      subtitle: subtitle,
       thumbnailUrl: thumbnailUrl,
     ));
     if (!_running) _processQueue();
@@ -489,6 +498,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
 
     if (!_disposed) {
       state = DownloadActive(
+        title: job.title,
         filename: filename.isNotEmpty ? filename : 'Connecting…',
         receivedBytes: 0,
         totalBytes: 0,
@@ -518,6 +528,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
 
     if (!_cancelled && !_disposed) {
       state = DownloadActive(
+        title: job.title,
         filename: filename,
         receivedBytes: 0,
         totalBytes: total,
@@ -541,6 +552,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
         final elapsed = now.difference(lastTick).inMilliseconds;
         if (elapsed >= 300 && !_cancelled && !_disposed) {
           state = DownloadActive(
+            title: job.title,
             filename: filename,
             receivedBytes: received,
             totalBytes: total,
@@ -565,6 +577,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
     // Record in history.
     await ref.read(downloadHistoryProvider.notifier).add(DownloadRecord(
           title: job.title,
+          subtitle: job.subtitle,
           filename: filename,
           filePath: file.path,
           thumbnailUrl: job.thumbnailUrl,

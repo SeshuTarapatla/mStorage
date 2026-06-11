@@ -58,3 +58,10 @@ const tabPalettes = {
 extension TabPaletteX on AppTab {
   TabPalette get palette => tabPalettes[this]!;
 }
+
+const kSeriesPalette = TabPalette(
+  primary:   Color(0xFFEA580C),
+  secondary: Color(0xFFF97316),
+  glow:      Color(0x66EA580C),
+  surface:   Color(0xFF1A0A02),
+);

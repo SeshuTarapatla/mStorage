@@ -1,0 +1,8 @@
+Movies
+title	imdb_id	date	video_url	poster_url	size_mb	language	plot	genres	tags	encoded	show	slide_images
+
+Series
+series_imdb_id	title	start_year	end_year	poster_url	plot	rating	genres	tags	show
+
+Episodes
+episode_imdb_id	series_imdb_id	season	episode	title	air_date	thumbnail_url	plot	rating	video_url	size_mb	language	encoded	show
