@@ -10,6 +10,12 @@ class ImdbData {
   final int? runtimeSeconds;
   final List<String> stars;
   final String? certificate;
+  // TV series fields — null for movies / episodes
+  final int? endYear; // end year for tvSeries (null if ongoing or not a series)
+  // TV episode fields — null for movies / series
+  final int? seasonNumber;
+  final int? episodeNumber;
+  final String? parentId; // parent series IMDB ID
 
   const ImdbData({
     required this.id,
@@ -23,6 +29,10 @@ class ImdbData {
     required this.runtimeSeconds,
     required this.stars,
     required this.certificate,
+    this.endYear,
+    this.seasonNumber,
+    this.episodeNumber,
+    this.parentId,
   });
 
   /// Parse from the live API response.
@@ -70,6 +80,21 @@ class ImdbData {
         ? (certs.first as Map<String, dynamic>)['rating']?.toString()
         : null;
 
+    final endYear = json['endYear'] as int?;
+
+    // TV episode: season / episode number and parent series ID.
+    // API may return these flat or nested under an "episode" object.
+    final epObj = json['episode'] as Map<String, dynamic>?;
+    final seasonNumber = (json['seasonNumber'] as num?)?.toInt()
+        ?? (epObj?['seasonNumber'] as num?)?.toInt();
+    final episodeNumber = (json['episodeNumber'] as num?)?.toInt()
+        ?? (epObj?['episodeNumber'] as num?)?.toInt();
+    // Parent series ID: try several common field names.
+    final seriesObj = json['series'] as Map<String, dynamic>?;
+    final parentId = json['seriesId'] as String?
+        ?? json['parentId'] as String?
+        ?? seriesObj?['id'] as String?;
+
     return ImdbData(
       id: json['id'] as String? ?? '',
       // API field is primaryTitle, not title
@@ -83,6 +108,10 @@ class ImdbData {
       runtimeSeconds: json['runtimeSeconds'] as int?,
       stars: stars,
       certificate: certificate,
+      endYear: endYear,
+      seasonNumber: seasonNumber,
+      episodeNumber: episodeNumber,
+      parentId: parentId?.isNotEmpty == true ? parentId : null,
     );
   }
 
@@ -101,6 +130,10 @@ class ImdbData {
         runtimeSeconds: j['runtimeSeconds'] as int?,
         stars: (j['stars'] as List<dynamic>? ?? []).map((s) => '$s').toList(),
         certificate: j['certificate'] as String?,
+        endYear: j['endYear'] as int?,
+        seasonNumber: j['seasonNumber'] as int?,
+        episodeNumber: j['episodeNumber'] as int?,
+        parentId: j['parentId'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -115,5 +148,9 @@ class ImdbData {
         'runtimeSeconds': runtimeSeconds,
         'stars': stars,
         'certificate': certificate,
+        if (endYear != null) 'endYear': endYear,
+        if (seasonNumber != null) 'seasonNumber': seasonNumber,
+        if (episodeNumber != null) 'episodeNumber': episodeNumber,
+        if (parentId != null) 'parentId': parentId,
       };
 }

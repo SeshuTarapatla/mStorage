@@ -1,12 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' show max;
 import 'dart:ui' show ImageFilter;
 import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import '../../../core/providers/decode_request_provider.dart';
+import '../../../core/providers/player_request_provider.dart';
 import '../../../core/services/catalog_cache_manager.dart';
+import '../../../core/services/settings_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/tab_colors.dart';
+import '../../shell/app_shell.dart';
+import '../catalog_notifier.dart';
 import '../imdb_service.dart';
 import '../models/catalog_entry.dart';
 
@@ -140,7 +148,7 @@ class _CatalogCardState extends State<CatalogCard> {
 // Expanded card — used by the catalog screen's local overlay stack
 // ---------------------------------------------------------------------------
 
-class CatalogCardExpanded extends StatefulWidget {
+class CatalogCardExpanded extends ConsumerStatefulWidget {
   final CatalogEntry entry;
   final TabPalette palette;
   final bool isDownloaded;
@@ -159,10 +167,10 @@ class CatalogCardExpanded extends StatefulWidget {
   });
 
   @override
-  State<CatalogCardExpanded> createState() => CatalogCardExpandedState();
+  ConsumerState<CatalogCardExpanded> createState() => CatalogCardExpandedState();
 }
 
-class CatalogCardExpandedState extends State<CatalogCardExpanded> {
+class CatalogCardExpandedState extends ConsumerState<CatalogCardExpanded> {
   final _pageController = PageController();
   int _currentPage = 0;
   List<String> _images = [];
@@ -438,36 +446,7 @@ class CatalogCardExpandedState extends State<CatalogCardExpanded> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (widget.isDownloaded) ...[
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.download_done_rounded, size: 13, color: Color(0xFF69F0AE)),
-                        SizedBox(width: 5),
-                        Text('Already downloaded',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF69F0AE))),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  // Button — always visible at the bottom
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: entry.videoUrl.isNotEmpty
-                          ? widget.onOpenInBrowser
-                          : null,
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: const Text('View & Download'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: palette.primary,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
+                  _EntryActionButton(entry: entry, palette: palette, onOpenInBrowser: widget.onOpenInBrowser, onClose: widget.onClose),
                 ],
               ),
             ),
@@ -479,6 +458,117 @@ class CatalogCardExpandedState extends State<CatalogCardExpanded> {
 
   String _fmtDate(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
+
+// ---------------------------------------------------------------------------
+// 4-state action button for the expanded movie card
+// ---------------------------------------------------------------------------
+
+class _EntryActionButton extends ConsumerWidget {
+  final CatalogEntry entry;
+  final TabPalette palette;
+  final VoidCallback onOpenInBrowser;
+  final VoidCallback onClose;
+
+  const _EntryActionButton({
+    required this.entry,
+    required this.palette,
+    required this.onOpenInBrowser,
+    required this.onClose,
+  });
+
+  static const _kVideoExts = {'mp4', 'mkv', 'avi', 'mov', 'webm'};
+
+  static String? _decodedVideoPath(String decodeDir, String title) {
+    final folder = Directory(p.join(decodeDir, title));
+    if (!folder.existsSync()) return null;
+    try {
+      for (final e in folder.listSync()) {
+        if (e is File) {
+          final ext = p.extension(e.path).replaceFirst('.', '').toLowerCase();
+          if (_kVideoExts.contains(ext)) return e.path;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final history   = ref.watch(downloadHistoryProvider);
+    final dlState   = ref.watch(downloadProvider);
+    final settings  = ref.watch(settingsProvider);
+    final decodeDir = settings.decodeOutputDirectory.isEmpty
+        ? AppDirectories.decoded
+        : settings.decodeOutputDirectory;
+
+    final record = history.cast<DownloadRecord?>().firstWhere(
+      (r) => r!.title == entry.title && File(r.filePath).existsSync(),
+      orElse: () => null,
+    );
+
+    final isActive    = dlState is DownloadActive && dlState.title == entry.title;
+    final decodedPath = _decodedVideoPath(decodeDir, entry.title);
+
+    final style = FilledButton.styleFrom(
+      backgroundColor: palette.primary,
+      foregroundColor: Colors.black,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+
+    final Widget btn;
+    if (isActive) {
+      btn = FilledButton.icon(
+        onPressed: null,
+        icon: SizedBox(
+          width: 14, height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: kTextMuted,
+          ),
+        ),
+        label: const Text('Downloading…'),
+        style: FilledButton.styleFrom(
+          backgroundColor: kSurface2Color,
+          foregroundColor: kTextMuted,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } else if (decodedPath != null) {
+      btn = FilledButton.icon(
+        onPressed: () {
+          onClose();
+          ref.read(playerOpenRequestProvider.notifier).state = decodedPath;
+          ref.read(activeTabProvider.notifier).state = AppTab.player;
+        },
+        icon: const Icon(Icons.play_circle_rounded, size: 16),
+        label: const Text('Play'),
+        style: style,
+      );
+    } else if (record != null) {
+      btn = FilledButton.icon(
+        onPressed: () {
+          onClose();
+          ref.read(decodeOpenRequestProvider.notifier).state = record.filePath;
+          ref.read(activeTabProvider.notifier).state = AppTab.decode;
+        },
+        icon: const Icon(Icons.lock_open_rounded, size: 16),
+        label: const Text('Decode'),
+        style: style,
+      );
+    } else {
+      btn = FilledButton.icon(
+        onPressed: entry.videoUrl.isNotEmpty ? onOpenInBrowser : null,
+        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+        label: const Text('View & Download'),
+        style: style,
+      );
+    }
+
+    return SizedBox(width: double.infinity, child: btn);
+  }
 }
 
 // Per-session cache: URL → normalized crop rect (0–1 coordinates).

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' show min;
+import 'dart:ui' show ImageFilter;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,10 +18,16 @@ import '../../core/theme/tab_colors.dart';
 import '../shell/app_shell.dart';
 import 'catalog_notifier.dart';
 import 'models/catalog_entry.dart';
+import 'models/series_entry.dart';
+import 'screens/series_detail_screen.dart';
+import 'series_notifier.dart';
 import 'widgets/catalog_card.dart';
+import 'widgets/series_card.dart';
 import 'widgets/webview_overlay.dart';
 
 enum _SortMode { alpha, date, rating }
+
+const _kBarHeight = 64.0;
 
 class CatalogScreen extends ConsumerStatefulWidget {
   const CatalogScreen({super.key});
@@ -43,7 +50,13 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
   Set<int> _filterYears = {};
   bool _filterDownloaded = false;
 
-  // Expanded card overlay state
+  // Sub-tab (Movies / Series) — plain int, no TabController, no animation delay
+  int _subTabIndex = 0;
+
+  // Open series detail (null = show grid)
+  SeriesEntry? _openedSeries;
+
+  // Movies expanded card overlay state
   CatalogEntry? _expandedEntry;
   Rect _expandedLocalRect = Rect.zero;
   Rect _bodyLocalRect = Rect.zero;
@@ -52,10 +65,13 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     vsync: this,
     duration: const Duration(milliseconds: 320),
   );
+
+
   final _bodyKey = GlobalKey();
 
   static const _kSortMode = 'catalog_sort_mode';
   static const _kSortAsc  = 'catalog_sort_asc';
+  static const _kSubTab   = 'catalog_sub_tab';
 
   @override
   void initState() {
@@ -64,10 +80,10 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
-    _loadSort();
+    _loadPrefs();
   }
 
-  Future<void> _loadSort() async {
+  Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final modeStr = prefs.getString(_kSortMode);
@@ -77,7 +93,11 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
       'rating' => _SortMode.rating,
       _        => _SortMode.alpha,
     };
-    setState(() { _sortMode = mode; _sortAsc = asc; });
+    final subTab = prefs.getInt(_kSubTab) ?? 0;
+    setState(() { _sortMode = mode; _sortAsc = asc; _subTabIndex = subTab; });
+    if (subTab == 1) {
+      ref.read(catalogSubPaletteProvider.notifier).state = kSeriesPalette;
+    }
   }
 
   Future<void> _saveSort(_SortMode mode, bool asc) async {
@@ -92,6 +112,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     _urlController.dispose();
     _searchController.dispose();
     _focusNode.dispose();
+    ref.read(catalogSubPaletteProvider.notifier).state = null;
     _expandAnim.dispose();
     super.dispose();
   }
@@ -109,6 +130,18 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
       // Shift+D is Google Photos' in-WebView download shortcut — ignore it here.
       if (HardwareKeyboard.instance.isShiftPressed) return false;
       setState(() => _showDownloads = !_showDownloads);
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape && _openedSeries != null) {
+      setState(() => _openedSeries = null);
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f5) {
+      final url = ref.read(sheetUrlProvider);
+      if (url != null) {
+        ref.read(catalogProvider.notifier).load(url, forceRefresh: true);
+        ref.read(seriesProvider.notifier).load(url, forceRefresh: true);
+      }
       return true;
     }
     return false;
@@ -140,11 +173,27 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     });
   }
 
+  void _switchSubTab(int index) {
+    setState(() {
+      _subTabIndex = index;
+      if (index != 1) _openedSeries = null;
+    });
+    ref.read(catalogSubPaletteProvider.notifier).state =
+        index == 1 ? kSeriesPalette : null;
+    SharedPreferences.getInstance().then((p) => p.setInt(_kSubTab, index));
+  }
+
+  void _onSeriesCardExpand(SeriesEntry entry) {
+    setState(() => _openedSeries = entry);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final palette = AppTab.catalog.palette;
+    final isSeriesTab = _subTabIndex == 1;
+    final palette = isSeriesTab ? kSeriesPalette : AppTab.catalog.palette;
     final sheetUrl = ref.watch(sheetUrlProvider);
     final catalogState = ref.watch(catalogProvider);
+    final seriesState = ref.watch(seriesProvider);
     final downloadState = ref.watch(downloadProvider);
     final downloadHistory = ref.watch(downloadHistoryProvider);
     final historyCount = downloadHistory.length;
@@ -153,6 +202,11 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     if (sheetUrl != null && catalogState is CatalogIdle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(catalogProvider.notifier).load(sheetUrl);
+      });
+    }
+    if (sheetUrl != null && seriesState is SeriesCatalogIdle) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(seriesProvider.notifier).load(sheetUrl);
       });
     }
 
@@ -192,7 +246,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
         return KeyEventResult.ignored;
       },
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, _kBarHeight),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -207,24 +261,29 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
               onSubmitUrl: (url) async {
                 await ref.read(sheetUrlProvider.notifier).save(url);
                 ref.read(catalogProvider.notifier).load(url);
+                ref.read(seriesProvider.notifier).load(url, forceRefresh: true);
               },
               onRefresh: _showDownloads
                   ? () =>
                       ref.read(downloadHistoryProvider.notifier).pruneDeleted()
                   : sheetUrl != null
-                      ? () => ref.read(catalogProvider.notifier).load(sheetUrl, forceRefresh: true)
+                      ? () {
+                          ref.read(catalogProvider.notifier).load(sheetUrl, forceRefresh: true);
+                          ref.read(seriesProvider.notifier).load(sheetUrl, forceRefresh: true);
+                        }
                       : null,
               onClearUrl: () {
                 ref.read(sheetUrlProvider.notifier).clear();
                 ref.read(catalogProvider.notifier).reset();
+                ref.read(seriesProvider.notifier).reset();
               },
               onToggleDownloads: () =>
                   setState(() => _showDownloads = !_showDownloads),
             ),
             const SizedBox(height: 12),
-            if (!_showDownloads && catalogState is CatalogLoaded) ...[
+            if (!isSeriesTab && !_showDownloads && catalogState is CatalogLoaded) ...[
               _SortFilterBar(
-                entries: (catalogState).entries,
+                entries: catalogState.entries,
                 sortMode: _sortMode,
                 sortAsc: _sortAsc,
                 filterLanguages: _filterLanguages,
@@ -277,6 +336,13 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                                 ref.read(activeTabProvider.notifier).state =
                                     AppTab.player;
                               },
+                            )
+                          : isSeriesTab
+                          ? _SeriesBody(
+                              state: seriesState,
+                              search: _search,
+                              downloadedTitles: downloadedTitles,
+                              onCardExpand: _onSeriesCardExpand,
                             )
                           : _Body(
                               state: catalogState,
@@ -335,9 +401,33 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
 
     // Outer Stack: backdrop covers the full catalog area (TopBar included);
     // card is clamped to the body area below the TopBar.
-    return Stack(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      color: isSeriesTab
+          ? kSeriesPalette.surface
+          : AppTab.catalog.palette.surface,
+      child: _openedSeries != null
+          ? SeriesDetailScreen(
+              key: ValueKey(_openedSeries!.title),
+              entry: _openedSeries!,
+              onBack: () => setState(() => _openedSeries = null),
+            )
+          : Stack(
       children: [
         catalogUi,
+        if (!_showDownloads)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _SubTabBar(
+              activeIndex: _subTabIndex,
+              surfaceColor: isSeriesTab
+                  ? kSeriesPalette.surface
+                  : AppTab.catalog.palette.surface,
+              onChanged: _switchSubTab,
+            ),
+          ),
         if (_expandedEntry != null) ...[
           FadeTransition(
             opacity: fadeAnim,
@@ -363,6 +453,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
           ),
         ],
       ],
+    ),
     );
   }
 
@@ -1235,7 +1326,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.photo_library_outlined, size: 48, color: kTextMuted)
+          Icon(Icons.video_library_outlined, size: 48, color: kTextMuted)
               .animate(onPlay: (c) => c.repeat(reverse: true))
               .scaleXY(begin: 0.92, end: 1.0, duration: 1800.ms, curve: Curves.easeInOut),
           const SizedBox(height: 16),
@@ -1365,12 +1456,27 @@ class _DownloadsListView extends ConsumerWidget {
           record: rec,
           palette: palette,
           decodedVideoPath: decodedPath,
-          onOpenFolder: () =>
-              Process.run('explorer.exe', [p.dirname(rec.filePath)]),
+          onOpenFolder: () {
+            final folder = decodedPath != null
+                ? p.dirname(decodedPath)
+                : p.dirname(rec.filePath);
+            Process.run('explorer.exe', [folder]);
+          },
           onDecode: () => onDecodeFile(rec.filePath),
           onPlay: decodedPath != null ? () => onPlayFile(decodedPath) : null,
-          onDelete: () =>
-              ref.read(downloadHistoryProvider.notifier).remove(rec.filePath),
+          onDelete: () {
+            try {
+              final f = File(rec.filePath);
+              if (f.existsSync()) f.deleteSync();
+            } catch (_) {}
+            if (decodedPath != null) {
+              try {
+                final dir = Directory(p.dirname(decodedPath));
+                if (dir.existsSync()) dir.deleteSync(recursive: true);
+              } catch (_) {}
+            }
+            ref.read(downloadHistoryProvider.notifier).remove(rec.filePath);
+          },
         );
       },
     );
@@ -1451,6 +1557,16 @@ class _DownloadRecordRow extends StatelessWidget {
                           fontSize: titleSize,
                           fontWeight: FontWeight.w500,
                           color: fileExists ? kTextPrimary : kTextMuted)),
+                  if (record.subtitle != null) ...[
+                    const SizedBox(height: 1),
+                    Text(record.subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: metaSize,
+                            color: kSeriesPalette.primary.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w500)),
+                  ],
                   const SizedBox(height: 2),
                   Text(record.filename,
                       maxLines: 1,
@@ -1463,7 +1579,7 @@ class _DownloadRecordRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (!fileExists)
+            if (!fileExists && decodedVideoPath == null)
               Tooltip(
                 message: 'File no longer exists on disk',
                 child: Icon(Icons.warning_amber_rounded,
@@ -1501,8 +1617,44 @@ class _DownloadRecordRow extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.delete_outline_rounded, color: kTextMuted),
               iconSize: iconSize,
-              tooltip: 'Remove from history',
-              onPressed: onDelete,
+              tooltip: 'Delete file',
+              onPressed: () => showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: kSurfaceColor,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Delete download?',
+                      style: TextStyle(
+                          color: kTextPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
+                  content: Text(
+                    decodedVideoPath != null
+                        ? 'This will permanently delete the decoded video folder and remove this entry from your download history.'
+                        : 'This will permanently delete the file from disk and remove it from your download history.',
+                    style: const TextStyle(
+                        color: kTextSecondary, fontSize: 13),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel',
+                          style: TextStyle(color: kTextMuted)),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onDelete();
+                      },
+                      child: const Text('Delete',
+                          style: TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -1905,6 +2057,319 @@ class _ClearBtn extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-tab bottom bar — Movies / Series
+// ---------------------------------------------------------------------------
+
+class _SubTabBar extends StatelessWidget {
+  final int activeIndex;
+  final Color surfaceColor;
+  final ValueChanged<int> onChanged;
+
+  const _SubTabBar({
+    required this.activeIndex,
+    required this.surfaceColor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                surfaceColor.withValues(alpha: 0.0),
+                surfaceColor.withValues(alpha: 0.92),
+              ],
+              stops: const [0.0, 0.38],
+            ),
+          ),
+          alignment: Alignment.bottomCenter,
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Stack(
+            children: [
+              Row(
+                children: [
+                  _SubTabItem(
+                    icon: Icons.movie_rounded,
+                    label: 'Movies',
+                    active: activeIndex == 0,
+                    palette: AppTab.catalog.palette,
+                    onTap: () => onChanged(0),
+                  ),
+                  _SubTabItem(
+                    icon: Icons.live_tv_rounded,
+                    label: 'Series',
+                    active: activeIndex == 1,
+                    palette: kSeriesPalette,
+                    onTap: () => onChanged(1),
+                  ),
+                ],
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOut,
+                  alignment: activeIndex == 0
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  child: FractionallySizedBox(
+                    widthFactor: 0.5,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 260),
+                      color: activeIndex == 0
+                          ? AppTab.catalog.palette.primary
+                          : kSeriesPalette.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubTabItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final TabPalette palette;
+  final VoidCallback onTap;
+
+  const _SubTabItem({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.palette,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? palette.primary : kTextMuted;
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Series body — handles the four catalog states
+// ---------------------------------------------------------------------------
+
+class _SeriesBody extends StatelessWidget {
+  final SeriesCatalogState state;
+  final String search;
+  final Set<String> downloadedTitles;
+  final void Function(SeriesEntry) onCardExpand;
+
+  const _SeriesBody({
+    required this.state,
+    required this.search,
+    required this.downloadedTitles,
+    required this.onCardExpand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (state) {
+      SeriesCatalogIdle()    => _SeriesEmptyState(),
+      SeriesCatalogLoading() => Center(
+          child: CircularProgressIndicator(color: kSeriesPalette.primary)),
+      SeriesCatalogError(:final message) => _ErrorState(message: message),
+      SeriesCatalogLoaded(:final series) => series.isEmpty
+          ? _SeriesEmptyState()
+          : _SeriesGrid(
+              all: series,
+              filtered: _filter(series),
+              downloadedTitles: downloadedTitles,
+              onCardExpand: onCardExpand,
+            ),
+    };
+  }
+
+  List<SeriesEntry> _filter(List<SeriesEntry> all) {
+    if (search.isEmpty) return all;
+    final q = search.toLowerCase();
+    return all.where((e) {
+      return e.title.toLowerCase().contains(q) ||
+          e.plot.toLowerCase().contains(q) ||
+          e.genres.any((g) => g.toLowerCase().contains(q)) ||
+          e.tags.any((t) => t.toLowerCase().contains(q));
+    }).toList();
+  }
+}
+
+class _SeriesEmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.live_tv_outlined, size: 48, color: kTextMuted)
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .scaleXY(
+                  begin: 0.92,
+                  end: 1.0,
+                  duration: 1800.ms,
+                  curve: Curves.easeInOut),
+          const SizedBox(height: 16),
+          const Text(
+            'No series yet',
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w600, color: kTextPrimary),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Add a "Series" tab to your spreadsheet to get started.',
+            style: TextStyle(fontSize: 13, color: kTextMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeriesGrid extends StatefulWidget {
+  final List<SeriesEntry> all;
+  final List<SeriesEntry> filtered;
+  final Set<String> downloadedTitles;
+  final void Function(SeriesEntry) onCardExpand;
+
+  const _SeriesGrid({
+    required this.all,
+    required this.filtered,
+    required this.downloadedTitles,
+    required this.onCardExpand,
+  });
+
+  @override
+  State<_SeriesGrid> createState() => _SeriesGridState();
+}
+
+class _SeriesGridState extends State<_SeriesGrid> {
+  double _aspectRatio = 2 / 3;
+  final _ratios = <double>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveRatios(widget.all);
+  }
+
+  @override
+  void didUpdateWidget(_SeriesGrid old) {
+    super.didUpdateWidget(old);
+    if (old.all != widget.all) {
+      final oldUrls = old.all.map((e) => e.posterUrl).toSet();
+      final newEntries = widget.all
+          .where((e) =>
+              e.posterUrl.isNotEmpty && !oldUrls.contains(e.posterUrl))
+          .toList();
+      if (newEntries.isNotEmpty) _resolveRatios(newEntries);
+    }
+  }
+
+  void _resolveRatios(List<SeriesEntry> entries) {
+    final urls =
+        entries.map((e) => e.posterUrl).where((u) => u.isNotEmpty).toSet();
+    for (final url in urls) {
+      final provider = CachedNetworkImageProvider(url,
+          cacheManager: CatalogCacheManager.instance);
+      final stream = provider.resolve(const ImageConfiguration());
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (ImageInfo info, _) {
+          stream.removeListener(listener);
+          final w = info.image.width;
+          final h = info.image.height;
+          if (h > 0) _onRatio(w / h);
+        },
+        onError: (_, _) => stream.removeListener(listener),
+      );
+      stream.addListener(listener);
+    }
+  }
+
+  void _onRatio(double ratio) {
+    _ratios.add(ratio);
+    final portraits = _ratios.where((r) => r < 1.0).toList();
+    if (portraits.isEmpty) return;
+    final sorted = List<double>.from(portraits)..sort();
+    final median = sorted[sorted.length ~/ 2];
+    if ((median - _aspectRatio).abs() > 0.02 && mounted) {
+      setState(() => _aspectRatio = median);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.filtered.isEmpty) {
+      return Center(
+        child: Text('No results.',
+            style: TextStyle(color: kTextMuted, fontSize: 14)),
+      );
+    }
+    return MasonryGridView.builder(
+      gridDelegate: const SliverSimpleGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 200,
+      ),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      itemCount: widget.filtered.length,
+      itemBuilder: (_, i) {
+        final entry = widget.filtered[i];
+        return SeriesCard(
+          key: ValueKey(entry.title),
+          entry: entry,
+          aspectRatio: _aspectRatio,
+          isDownloaded:
+              widget.downloadedTitles.any((t) => t.startsWith(entry.title)),
+          onExpand: () => widget.onCardExpand(entry),
+        )
+            .animate()
+            .fadeIn(
+                duration: 280.ms,
+                delay: Duration(milliseconds: min(i, 9) * 35))
+            .slideY(begin: 0.06, duration: 280.ms, curve: Curves.easeOut);
+      },
     );
   }
 }

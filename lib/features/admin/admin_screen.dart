@@ -4,28 +4,33 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/services/catalog_cache_manager.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
 import '../catalog/imdb_service.dart';
 import '../catalog/models/imdb_data.dart';
+import '../catalog/models/episode_sheet_schema.dart';
+import '../catalog/models/series_entry.dart';
+import '../catalog/models/series_sheet_schema.dart';
 import '../catalog/models/sheet_schema.dart';
+import '../catalog/series_notifier.dart';
 
 final _adminPalette = AppTab.admin.palette;
 
 // Amber badge for top-4 slide picks.
 const _kTop4Color = Color(0xFFF59E0B);
 
+enum _AdminMode { movie, series, episode }
 
-
-class AdminScreen extends StatefulWidget {
+class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
   @override
-  State<AdminScreen> createState() => _AdminScreenState();
+  ConsumerState<AdminScreen> createState() => _AdminScreenState();
 }
 
-class _AdminScreenState extends State<AdminScreen> {
+class _AdminScreenState extends ConsumerState<AdminScreen> {
   final _imdbIdCtrl = TextEditingController();
 
   bool _fetching = false;
@@ -46,6 +51,14 @@ class _AdminScreenState extends State<AdminScreen> {
   final _sizeMbCtrl      = TextEditingController();
   bool _encoded = true;
   bool _show    = true;
+
+  // ── Series mode ──────────────────────────────────────────────────────────
+  _AdminMode _mode = _AdminMode.movie;
+  final _seriesImdbCtrl     = TextEditingController();
+  final _seriesImdbFocusNode = FocusNode();
+  final _seasonCtrl     = TextEditingController(text: '1');
+  final _episodeCtrl    = TextEditingController(text: '1');
+  ImdbData? _episodeData; // episode IMDB data (fetched from _imdbIdCtrl in series mode)
 
   // All images fetched from API (up to 100).
   List<String> _allImages = [];
@@ -71,9 +84,19 @@ class _AdminScreenState extends State<AdminScreen> {
   int  _selectedMonth = 1;
   int  _selectedDay   = 1;
 
+  void _onFieldChanged() {
+    if (mounted && _data != null) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    for (final c in [
+      _videoUrlCtrl, _languageCtrl, _sizeMbCtrl,
+      _seasonCtrl, _episodeCtrl,
+    ]) {
+      c.addListener(_onFieldChanged);
+    }
   }
 
   @override
@@ -87,6 +110,10 @@ class _AdminScreenState extends State<AdminScreen> {
     _languageCtrl.dispose();
     _languageFocusNode.dispose();
     _sizeMbCtrl.dispose();
+    _seriesImdbCtrl.dispose();
+    _seriesImdbFocusNode.dispose();
+    _seasonCtrl.dispose();
+    _episodeCtrl.dispose();
     _pasteErrorTimer?.cancel();
     _flashTimer?.cancel();
     super.dispose();
@@ -133,49 +160,129 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
-  Future<void> _fetch() async {
-    final id = _imdbIdCtrl.text.trim();
-    if (id.isEmpty) return;
+  void _setMode(_AdminMode mode) {
+    if (mode == _mode) return;
     setState(() {
-      _fetching = true;
-      _error = null;
-      _data = null;
-      _genres = [];
-      _tags = [];
-      _allImages = [];
-      _selected = [];
+      _mode             = mode;
+      _data             = null;
+      _episodeData      = null;
+      _error            = null;
+      _genres           = [];
+      _tags             = [];
+      _allImages        = [];
+      _selected         = [];
       _videoUrlCtrl.clear();
       _languageCtrl.clear();
       _sizeMbCtrl.clear();
-      _encoded = true;
-      _show = true;
+      _seriesImdbCtrl.clear();
+      _encoded          = true;
+      _show             = true;
+      _selectedYear     = null;
+      _selectedMonth    = 1;
+      _selectedDay      = 1;
+      _seasonCtrl.text  = '1';
+      _episodeCtrl.text = '1';
     });
+  }
 
+  Future<void> _fetch() async {
+    final id = _imdbIdCtrl.text.trim();
+    if (id.isEmpty) return;
+    switch (_mode) {
+      case _AdminMode.movie:   await _fetchMovie(id);
+      case _AdminMode.series:  await _fetchSeries(id);
+      case _AdminMode.episode: await _fetchEpisode(id, _seriesImdbCtrl.text.trim());
+    }
+  }
+
+  Future<void> _fetchMovie(String id) async {
+    setState(() {
+      _fetching  = true; _error = null; _data = null; _episodeData = null;
+      _genres = []; _tags = []; _allImages = []; _selected = [];
+      _videoUrlCtrl.clear(); _languageCtrl.clear(); _sizeMbCtrl.clear();
+      _encoded = true; _show = true;
+    });
     try {
       final results = await ImdbService().resolve([id]);
       final data = results[id];
       if (!mounted) return;
       if (data == null) {
-        setState(() {
-          _error = 'No data found for "$id". Check the IMDB ID.';
-          _fetching = false;
-        });
+        setState(() { _error = 'No data found for "$id".'; _fetching = false; });
         return;
       }
-
       final page1 = await ImdbService().fetchImagesUncached(id);
       if (!mounted) return;
-
       setState(() {
         _data = data;
         _genres = List<String>.from(data.genres);
         _allImages = page1.images;
         _selected = page1.images.take(4).toList();
         _nextPageToken = page1.nextPageToken;
-        _fetching = false;
         _selectedYear  = data.releaseDate?.year;
         _selectedMonth = data.releaseDate?.month ?? 1;
-        _selectedDay   = data.releaseDate?.day ?? 1;
+        _selectedDay   = data.releaseDate?.day   ?? 1;
+        _fetching = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _fetching = false; });
+    }
+  }
+
+  Future<void> _fetchSeries(String id) async {
+    setState(() {
+      _fetching = true; _error = null; _data = null;
+      _genres = []; _tags = [];
+    });
+    try {
+      final results = await ImdbService().resolve([id]);
+      if (!mounted) return;
+      final data = results[id];
+      if (data == null) {
+        setState(() { _error = 'No data found for "$id".'; _fetching = false; });
+        return;
+      }
+      setState(() {
+        _data   = data;
+        _genres = List<String>.from(data.genres);
+        _fetching = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _fetching = false; });
+    }
+  }
+
+  Future<void> _fetchEpisode(String episodeId, String seriesId) async {
+    if (seriesId.isEmpty) {
+      setState(() => _error = 'Series IMDB ID is required.');
+      return;
+    }
+    setState(() {
+      _fetching = true; _error = null; _data = null; _episodeData = null;
+      _videoUrlCtrl.clear(); _languageCtrl.clear(); _sizeMbCtrl.clear();
+      _encoded = true; _show = true;
+    });
+    try {
+      final ids = <String>[seriesId];
+      if (episodeId.isNotEmpty) ids.add(episodeId);
+      final results = await ImdbService().resolve(ids);
+      if (!mounted) return;
+      final seriesData = results[seriesId];
+      if (seriesData == null) {
+        setState(() { _error = 'No series data for "$seriesId".'; _fetching = false; });
+        return;
+      }
+      final epData = episodeId.isNotEmpty ? results[episodeId] : null;
+      if (episodeId.isNotEmpty && epData == null) {
+        setState(() { _error = 'No episode data for "$episodeId".'; _fetching = false; });
+        return;
+      }
+      setState(() {
+        _data        = seriesData;
+        _episodeData = epData;
+        _selectedYear  = epData?.releaseDate?.year;
+        _selectedMonth = 1;
+        _selectedDay   = 1;
+        _fetching = false;
       });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _fetching = false; });
@@ -225,7 +332,127 @@ class _AdminScreenState extends State<AdminScreen> {
       return;
     }
 
-    // Case 2: tab-separated sheet row → proceed with full paste.
+    final tabCols = text.split('\t');
+
+    // Case 2a: Series TSV (10 cols) in series mode.
+    if (_mode == _AdminMode.series && tabCols.length >= SeriesSheetSchema.columnCount) {
+      final sc = SeriesSheetSchema.parseTsv(text);
+      final genresRaw = sc[SeriesSheetSchema.iGenres];
+      final tagsRaw   = sc[SeriesSheetSchema.iTags];
+      final genres = genresRaw.isEmpty ? <String>[] : genresRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final tags   = tagsRaw.isEmpty   ? <String>[] : tagsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final startYear = int.tryParse(sc[SeriesSheetSchema.iStartYear]);
+      final seriesId  = sc[SeriesSheetSchema.iSeriesImdbId];
+
+      setState(() {
+        _imdbIdCtrl.text = seriesId;
+        _genres  = genres;
+        _tags    = tags;
+        _show    = sc[SeriesSheetSchema.iShow].toLowerCase() != 'false';
+        _data    = ImdbData(
+          id: seriesId,
+          title: sc[SeriesSheetSchema.iTitle],
+          plot: sc[SeriesSheetSchema.iPlot],
+          genres: genres,
+          releaseDate: startYear != null ? DateTime(startYear) : null,
+          posterUrl: sc[SeriesSheetSchema.iPosterUrl],
+          rating: double.tryParse(sc[SeriesSheetSchema.iRating]),
+          voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
+          endYear: int.tryParse(sc[SeriesSheetSchema.iEndYear]),
+        );
+        _loadingMore = seriesId.isNotEmpty;
+        _fetching    = false;
+        _error       = null;
+      });
+
+      // Enrich from API in background
+      if (seriesId.isEmpty) return;
+      try {
+        final results = await ImdbService().resolve([seriesId]);
+        if (!mounted) return;
+        final meta = results[seriesId];
+        if (meta == null) { setState(() => _loadingMore = false); return; }
+        final pasted = _data!;
+        setState(() {
+          _data = ImdbData(
+            id: seriesId,
+            title: pasted.title.isNotEmpty ? pasted.title : meta.title,
+            plot: pasted.plot.isNotEmpty ? pasted.plot : meta.plot,
+            genres: pasted.genres.isNotEmpty ? pasted.genres : List<String>.from(meta.genres),
+            releaseDate: meta.releaseDate ?? pasted.releaseDate,
+            posterUrl: pasted.posterUrl.isNotEmpty ? pasted.posterUrl : meta.posterUrl,
+            rating: meta.rating, voteCount: meta.voteCount,
+            runtimeSeconds: meta.runtimeSeconds,
+            stars: meta.stars, certificate: meta.certificate,
+            endYear: meta.endYear ?? pasted.endYear,
+          );
+          _genres      = _data!.genres;
+          _loadingMore = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _loadingMore = false);
+      }
+      return;
+    }
+
+    // Case 2b: Episode TSV (14 cols) in episode mode.
+    if (_mode == _AdminMode.episode && tabCols.length >= EpisodeSheetSchema.columnCount) {
+      final ec     = EpisodeSheetSchema.parseTsv(text);
+      final epDate = DateTime.tryParse(ec[EpisodeSheetSchema.iAirDate]);
+      final seriesId = ec[EpisodeSheetSchema.iSeriesImdbId];
+
+      setState(() {
+        _imdbIdCtrl.text     = ec[EpisodeSheetSchema.iEpisodeImdbId];
+        _seriesImdbCtrl.text = seriesId;
+        _seasonCtrl.text     = ec[EpisodeSheetSchema.iSeason].isNotEmpty ? ec[EpisodeSheetSchema.iSeason] : '1';
+        _episodeCtrl.text    = ec[EpisodeSheetSchema.iEpisode].isNotEmpty ? ec[EpisodeSheetSchema.iEpisode] : '1';
+        _videoUrlCtrl.text   = ec[EpisodeSheetSchema.iVideoUrl];
+        _languageCtrl.text   = ec[EpisodeSheetSchema.iLanguage];
+        _sizeMbCtrl.text     = ec[EpisodeSheetSchema.iSizeMb];
+        _encoded       = ec[EpisodeSheetSchema.iEncoded].toLowerCase() == 'true';
+        _show          = ec[EpisodeSheetSchema.iShow].toLowerCase() != 'false';
+        _selectedYear  = epDate?.year;
+        _selectedMonth = epDate?.month ?? 1;
+        _selectedDay   = epDate?.day   ?? 1;
+        _episodeData   = ec[EpisodeSheetSchema.iTitle].isNotEmpty
+            ? ImdbData(
+                id: ec[EpisodeSheetSchema.iEpisodeImdbId],
+                title: ec[EpisodeSheetSchema.iTitle],
+                plot: ec[EpisodeSheetSchema.iPlot],
+                genres: const [],
+                releaseDate: epDate,
+                posterUrl: ec[EpisodeSheetSchema.iThumbnailUrl],
+                rating: double.tryParse(ec[EpisodeSheetSchema.iRating]),
+                voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
+              )
+            : null;
+        // Minimal series placeholder so form renders; enriched below.
+        _data = ImdbData(
+          id: seriesId, title: '', plot: '', genres: const [],
+          releaseDate: null, posterUrl: '', rating: null,
+          voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
+        );
+        _allImages = []; _selected = []; _nextPageToken = null;
+        _loadingMore = seriesId.isNotEmpty;
+        _fetching    = false;
+        _error       = null;
+      });
+
+      // Enrich series context from API in background
+      if (seriesId.isEmpty) return;
+      try {
+        final results = await ImdbService().resolve([seriesId]);
+        if (!mounted) return;
+        final meta = results[seriesId];
+        if (meta == null) { setState(() => _loadingMore = false); return; }
+        setState(() { _data = meta; _loadingMore = false; });
+      } catch (_) {
+        if (mounted) setState(() => _loadingMore = false);
+      }
+      return;
+    }
+
+    // Case 2b: tab-separated movies sheet row → proceed with full paste.
     final cols = SheetSchema.parseTsv(text);
 
     final title      = cols[SheetSchema.iTitle];
@@ -459,16 +686,40 @@ class _AdminScreenState extends State<AdminScreen> {
                   children: [
                     _buildPreview(),
                     const SizedBox(height: 24),
-                    _buildDateEditor(),
-                    const SizedBox(height: 24),
-                    _buildGenreEditor(),
-                    const SizedBox(height: 24),
-                    _buildTagsEditor(),
-                    const SizedBox(height: 24),
-                    _buildRowExtras(),
-                    const SizedBox(height: 24),
-                    _buildImagePicker(),
-                    const SizedBox(height: 24),
+                    if (_mode != _AdminMode.series) ...[
+                      _buildDateEditor(
+                        label: _mode == _AdminMode.episode ? 'Air Date' : 'Date',
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_mode != _AdminMode.episode) ...[
+                      _buildGenreEditor(),
+                      const SizedBox(height: 24),
+                      _buildTagsEditor(),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_mode == _AdminMode.episode) ...[
+                      _buildEpisodeSection(),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_mode != _AdminMode.series) ...[
+                      _buildRowExtras(),
+                      const SizedBox(height: 24),
+                    ] else ...[
+                      Row(children: [
+                        _ToggleChip(
+                          label: 'Show',
+                          value: _show,
+                          onChanged: (v) => setState(() => _show = v),
+                          palette: _adminPalette,
+                        ),
+                      ]),
+                      const SizedBox(height: 24),
+                    ],
+                    if (_mode == _AdminMode.movie) ...[
+                      _buildImagePicker(),
+                      const SizedBox(height: 24),
+                    ],
                     _buildResults(),
                     const SizedBox(height: 32),
                   ],
@@ -483,6 +734,7 @@ class _AdminScreenState extends State<AdminScreen> {
   // ── Header ────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
+    final isEpisode = _mode == _AdminMode.episode;
     return Row(
       children: [
         Icon(Icons.admin_panel_settings_rounded,
@@ -493,16 +745,43 @@ class _AdminScreenState extends State<AdminScreen> {
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: _adminPalette.primary)),
-        const SizedBox(width: 6),
-        Text('— Catalog entry editor',
-            style: TextStyle(fontSize: 14, color: kTextMuted)),
-        const SizedBox(width: 24),
+        const SizedBox(width: 12),
+        // Mode dropdown
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: kSurfaceColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: kBorderColor),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<_AdminMode>(
+              value: _mode,
+              isDense: true,
+              dropdownColor: kSurfaceColor,
+              style: TextStyle(fontSize: 13, color: kTextPrimary),
+              icon: Icon(Icons.expand_more_rounded, size: 16, color: kTextMuted),
+              items: const [
+                DropdownMenuItem(value: _AdminMode.movie,   child: Text('Movie')),
+                DropdownMenuItem(value: _AdminMode.series,  child: Text('Series')),
+                DropdownMenuItem(value: _AdminMode.episode, child: Text('Episode')),
+              ],
+              onChanged: (v) { if (v != null) _setMode(v); },
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Primary IMDB ID field
         Expanded(
           child: TextField(
             controller: _imdbIdCtrl,
             style: TextStyle(fontSize: 13, color: kTextPrimary),
             decoration: InputDecoration(
-              hintText: 'IMDB ID  (e.g. tt30825738)',
+              hintText: switch (_mode) {
+                _AdminMode.movie    => 'IMDB ID  (e.g. tt30825738)',
+                _AdminMode.series   => 'Series IMDB ID  (tt…)',
+                _AdminMode.episode  => 'Episode IMDB ID  (tt…)',
+              },
               hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
               filled: true,
               fillColor: kSurfaceColor,
@@ -521,6 +800,11 @@ class _AdminScreenState extends State<AdminScreen> {
             onSubmitted: (_) => _fetch(),
           ),
         ),
+        // Series IMDB ID — Episode mode only
+        if (isEpisode) ...[
+          const SizedBox(width: 8),
+          Expanded(child: _buildSeriesIdField()),
+        ],
         const SizedBox(width: 8),
         Tooltip(
           message: 'Paste row from clipboard',
@@ -551,6 +835,120 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // ── Series ID autocomplete (Episode mode header) ──────────────────────────
+
+  Widget _buildSeriesIdField() {
+    final seriesState = ref.watch(seriesProvider);
+    final series = seriesState is SeriesCatalogLoaded
+        ? seriesState.series
+        : <SeriesEntry>[];
+
+    if (series.isEmpty) {
+      return TextField(
+        controller: _seriesImdbCtrl,
+        focusNode: _seriesImdbFocusNode,
+        style: TextStyle(fontSize: 13, color: kTextPrimary),
+        decoration: InputDecoration(
+          hintText: 'Series IMDB ID  (tt…)  — required',
+          hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
+          filled: true,
+          fillColor: kSurfaceColor,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kSeriesPalette.primary)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+        onSubmitted: (_) => _fetch(),
+      );
+    }
+
+    return RawAutocomplete<SeriesEntry>(
+      textEditingController: _seriesImdbCtrl,
+      focusNode: _seriesImdbFocusNode,
+      displayStringForOption: (e) => e.imdbId,
+      optionsBuilder: (v) {
+        if (v.text.isEmpty) return series;
+        final q = v.text.toLowerCase();
+        return series.where(
+          (e) => e.title.toLowerCase().contains(q) || e.imdbId.toLowerCase().contains(q),
+        );
+      },
+      onSelected: (e) {
+        _seriesImdbCtrl.text = e.imdbId;
+      },
+      optionsViewBuilder: (context, onSelected, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          color: kSurfaceColor,
+          elevation: 4,
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 180),
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              shrinkWrap: true,
+              itemCount: options.length,
+              itemBuilder: (context, index) {
+                final entry = options.elementAt(index);
+                return InkWell(
+                  onTap: () => onSelected(entry),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.title,
+                            style: TextStyle(fontSize: 12, color: kTextPrimary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(entry.imdbId,
+                            style: TextStyle(fontSize: 11, color: kTextMuted)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+      fieldViewBuilder: (context, controller, focusNode, onSubmitted) => TextField(
+        controller: controller,
+        focusNode: focusNode,
+        onSubmitted: (_) { onSubmitted(); _fetch(); },
+        style: TextStyle(fontSize: 13, color: kTextPrimary),
+        decoration: InputDecoration(
+          hintText: 'Series  (search title or paste tt…)',
+          hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
+          filled: true,
+          fillColor: kSurfaceColor,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kBorderColor)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: kSeriesPalette.primary)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      ),
     );
   }
 
@@ -635,7 +1033,7 @@ class _AdminScreenState extends State<AdminScreen> {
     return List.generate(count, (i) => i + 1);
   }
 
-  Widget _buildDateEditor() {
+  Widget _buildDateEditor({String label = 'Date'}) {
     final currentYear = DateTime.now().year;
     final years = List.generate(currentYear - 1899, (i) => currentYear - i);
     final days = _daysInMonth(_selectedYear ?? currentYear, _selectedMonth);
@@ -646,7 +1044,7 @@ class _AdminScreenState extends State<AdminScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          label: 'Date',
+          label: label,
           subtitle: 'API provides year only — fill in month and day if known',
         ),
         const SizedBox(height: 8),
@@ -1122,6 +1520,140 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
+  // ── Episode section (series mode only) ───────────────────────────────────
+
+  Widget _buildEpisodeSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          label: 'Episode',
+          subtitle: 'Auto-filled from IMDB — edit if needed',
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            SizedBox(
+              width: 90,
+              child: _extrasField(controller: _seasonCtrl, hint: 'season #'),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 90,
+              child: _extrasField(controller: _episodeCtrl, hint: 'episode #'),
+            ),
+          ],
+        ),
+        if (_episodeData != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: kSurfaceColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: kSeriesPalette.primary.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                if (_episodeData!.posterUrl.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox(
+                      width: 80,
+                      height: 45,
+                      child: CachedNetworkImage(
+                        imageUrl: _episodeData!.posterUrl,
+                        fit: BoxFit.cover,
+                        cacheManager: CatalogCacheManager.instance,
+                        errorWidget: (_, _, _) =>
+                            Container(color: kSurface2Color),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _episodeData!.title,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: kTextPrimary),
+                      ),
+                      if (_episodeData!.releaseDate != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          _fmtDate(_episodeData!.releaseDate!),
+                          style: const TextStyle(
+                              fontSize: 11, color: kTextSecondary),
+                        ),
+                      ],
+                      if (_episodeData!.rating != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '★ ${_episodeData!.rating!.toStringAsFixed(1)}',
+                          style: const TextStyle(
+                              fontSize: 11, color: Color(0xFFF5C518)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _fmtDate(DateTime d) {
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$m-$day';
+  }
+
+  List<String> get _seriesRowValues {
+    final d = _data!;
+    return [
+      _imdbIdCtrl.text.trim(),                    // series_imdb_id
+      d.title,                                    // title
+      d.releaseDate?.year.toString() ?? '',       // start_year
+      d.endYear?.toString() ?? '',                // end_year
+      d.posterUrl,                                // poster_url
+      d.plot,                                     // plot
+      d.rating?.toStringAsFixed(1) ?? '',         // rating
+      _genres.join(', '),                         // genres
+      _tags.join(', '),                           // tags
+      _show ? 'TRUE' : 'FALSE',                   // show
+    ];
+  }
+
+  List<String> get _episodeRowValues {
+    final ep = _episodeData!;
+    return [
+      _imdbIdCtrl.text.trim(),                    // episode_imdb_id
+      _seriesImdbCtrl.text.trim(),                // series_imdb_id
+      _seasonCtrl.text.trim(),                    // season
+      _episodeCtrl.text.trim(),                   // episode
+      ep.title,                                   // title
+      _dateResult,                                // air_date
+      ep.posterUrl,                               // thumbnail_url
+      ep.plot,                                    // plot
+      ep.rating?.toStringAsFixed(1) ?? '',        // rating
+      _videoUrlCtrl.text.trim(),                  // video_url
+      _sizeMbCtrl.text.trim(),                    // size_mb
+      _languageCtrl.text.trim(),                  // language
+      _encoded ? 'TRUE' : 'FALSE',                // encoded
+      _show    ? 'TRUE' : 'FALSE',                // show
+    ];
+  }
+
   // ── Row extras ────────────────────────────────────────────────────────────
 
   Widget _buildRowExtras() {
@@ -1284,7 +1816,25 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _buildResults() {
-    final values = _rowValues;
+    final List<String> values;
+    final List<String> columns;
+    final String tsvRow;
+    switch (_mode) {
+      case _AdminMode.movie:
+        values  = _rowValues;
+        columns = SheetSchema.columns;
+        tsvRow  = SheetSchema.buildTsv(values);
+      case _AdminMode.series:
+        values  = _seriesRowValues;
+        columns = SeriesSheetSchema.columns;
+        tsvRow  = SeriesSheetSchema.buildTsv(values);
+      case _AdminMode.episode:
+        values  = _episodeData != null
+            ? _episodeRowValues
+            : List.filled(EpisodeSheetSchema.columnCount, '');
+        columns = EpisodeSheetSchema.columns;
+        tsvRow  = EpisodeSheetSchema.buildTsv(values);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1298,7 +1848,7 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ),
             FilledButton.icon(
-              onPressed: () => _copy(SheetSchema.buildTsv(values)),
+              onPressed: () => _copy(tsvRow),
               icon: const Icon(Icons.table_rows_rounded, size: 14),
               label: const Text('Copy row'),
               style: FilledButton.styleFrom(
@@ -1322,10 +1872,10 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           child: Column(
             children: [
-              for (var i = 0; i < SheetSchema.columns.length; i++) ...[
+              for (var i = 0; i < columns.length; i++) ...[
                 if (i > 0) Divider(height: 1, color: kBorderColor),
                 _ResultRow(
-                  label: SheetSchema.columns[i],
+                  label: columns[i],
                   value: values[i],
                   onCopy: values[i].isNotEmpty ? () => _copy(values[i]) : null,
                 ),
@@ -1871,6 +2421,7 @@ class _TagEditorChip extends StatelessWidget {
     );
   }
 }
+
 
 class _ResultRow extends StatefulWidget {
   final String label;

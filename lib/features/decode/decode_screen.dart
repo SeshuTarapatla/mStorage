@@ -94,6 +94,20 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     final settings = ref.watch(settingsProvider);
     final accent = _palette.primary;
 
+    // Auto-delete the encoded source file when decode succeeds.
+    // Keep the history record so Downloads still shows the entry with a Play button.
+    ref.listen<DecodeState>(decodeProvider, (previous, next) {
+      if (previous?.step != DecodeStep.done && next.step == DecodeStep.done) {
+        final path = _videoPath;
+        if (path != null) {
+          try {
+            final file = File(path);
+            if (file.existsSync()) file.deleteSync();
+          } catch (_) {}
+        }
+      }
+    });
+
     // Consume any file path sent from the Catalog "Decode this" shortcut.
     ref.listen<String?>(decodeOpenRequestProvider, (_, path) {
       if (path != null && mounted) {
