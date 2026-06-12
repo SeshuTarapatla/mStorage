@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart';
 import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -18,6 +19,7 @@ import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 
 const _kVideoExts = ['mp4', 'mkv', 'mov', 'avi', 'webm'];
+const _kSubtitleExts = ['srt', 'ass', 'vtt'];
 
 bool _isVideoFile(String path) =>
     _kVideoExts.contains(path.split('.').last.toLowerCase());
@@ -30,6 +32,11 @@ final _sharedController = VideoController(
   _sharedPlayer,
   configuration: const VideoControllerConfiguration(
     enableHardwareAcceleration: true,
+    // Cap the output texture at FHD — the window is never 4K wide, and this
+    // cuts texture-upload bandwidth by 4× for 4K sources (most impactful fix
+    // for high-bitrate HEVC 60fps videos that stutter in windowed players).
+    width: 1920,
+    height: 1080,
   ),
 );
 bool _mpvConfigured = false;
@@ -44,7 +51,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final _palette = AppTab.player.palette;
 
-  // Aliases — not late final; we don't own these objects.
   Player get _player => _sharedPlayer;
   VideoController get _controller => _sharedController;
 
@@ -55,12 +61,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _syncplayFound = false;
   String? _syncplayPath;
   String? _vlcPath;
-  // Syncplay process & log
   Process? _syncplayProcess;
   final List<String> _syncplayLogs = [];
   bool _showLogs = false;
   StreamSubscription<String>? _stdoutSub;
   StreamSubscription<String>? _stderrSub;
+
+  // v1.4.1 additions
+  List<String> _availableSubtitles = [];
+  String? _activeSubtitle;
 
   @override
   void initState() {
@@ -74,9 +83,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       _mpvConfigured = true;
       _configureForHighRes();
     }
+    _initVolume();
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
 
-    // Consume any request that was set before this State was created (tab switch).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final path = ref.read(playerOpenRequestProvider);
@@ -90,8 +99,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
-    // Stop playback but do NOT dispose the shared player/controller —
-    // they are module-level singletons and must survive hot restart.
     _player.stop();
     _usernameCtrl.dispose();
     _roomCtrl.dispose();
@@ -100,34 +107,78 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     super.dispose();
   }
 
+  Future<void> _initVolume() async {
+    final vol = ref.read(settingsProvider).playerVolume;
+    try { await _player.setVolume(vol); } catch (_) {}
+  }
+
   bool _handleKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
-    if (event.logicalKey != LogicalKeyboardKey.space) return false;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
     if (_videoPath == null) return false;
-    // Don't steal space from focused text fields
     if (FocusManager.instance.primaryFocus?.context
-            ?.findAncestorWidgetOfExactType<TextField>() !=
-        null) {
+            ?.findAncestorWidgetOfExactType<TextField>() != null) {
       return false;
     }
-    _player.playOrPause();
-    return true;
+
+    final key = event.logicalKey;
+    final isRepeat = event is KeyRepeatEvent;
+
+    if (key == LogicalKeyboardKey.space && !isRepeat) {
+      _player.playOrPause();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      final pos = _player.state.position;
+      final newPos = pos - const Duration(seconds: 10);
+      _player.seek(newPos.isNegative ? Duration.zero : newPos);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _player.seek(_player.state.position + const Duration(seconds: 10));
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowUp && !isRepeat) {
+      final newVol = (_player.state.volume + 5.0).clamp(0.0, 100.0);
+      _player.setVolume(newVol);
+      ref.read(settingsProvider.notifier).setPlayerVolume(newVol);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowDown && !isRepeat) {
+      final newVol = (_player.state.volume - 5.0).clamp(0.0, 100.0);
+      _player.setVolume(newVol);
+      ref.read(settingsProvider.notifier).setPlayerVolume(newVol);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyM && !isRepeat) {
+      if (_player.state.volume > 0) {
+        _player.setVolume(0);
+      } else {
+        final saved = ref.read(settingsProvider).playerVolume;
+        _player.setVolume(saved > 0 ? saved : 100.0);
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.keyF && !isRepeat) {
+      _toggleFullscreen();
+      return true;
+    }
+    if (key == LogicalKeyboardKey.escape && !isRepeat) {
+      if (ref.read(playerFullscreenProvider)) _toggleFullscreen();
+      return true;
+    }
+    return false;
   }
 
   void _checkSyncplay() {
     final appDir = p.dirname(Platform.resolvedExecutable);
     final paths = [
-      // Portable bundle next to the app executable
       p.join(appDir, 'syncplay', 'SyncplayConsole.exe'),
       r'C:\Program Files\Syncplay\SyncplayConsole.exe',
       r'C:\Program Files (x86)\Syncplay\SyncplayConsole.exe',
     ];
     for (final path in paths) {
       if (File(path).existsSync()) {
-        setState(() {
-          _syncplayFound = true;
-          _syncplayPath = path;
-        });
+        setState(() { _syncplayFound = true; _syncplayPath = path; });
         return;
       }
     }
@@ -149,11 +200,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Future<void> _configureForHighRes() async {
     try {
       final native = _sharedPlayer.platform as NativePlayer;
-      // Hardware video decoding — offloads decode to GPU, critical for 4K/60fps.
-      await native.setProperty('hwdec', 'auto');
-      // Larger demux buffer handles high-bitrate 4K without stutter.
-      await native.setProperty('demuxer-max-bytes', '150MiB');
-      await native.setProperty('demuxer-readahead-secs', '20');
+      // Force NVIDIA NVDEC for hardware decode. 'auto' on a laptop with iGPU+dGPU
+      // typically picks D3D11VA on the Intel iGPU (the display adapter). nvdec-copy
+      // uses the RTX 4070's dedicated NVDEC unit — far better for 4K HEVC 60fps —
+      // and copies decoded frames to system RAM for Flutter texture upload.
+      // Falls back to auto if NVDEC is unavailable (e.g., non-NVIDIA systems).
+      await native.setProperty('hwdec', 'nvdec-copy,auto');
+      await native.setProperty('hwdec-codecs', 'all');
+      // video-sync=audio is the VFR-safe default. display-resample looks great on
+      // constant-fps content but causes severe jitter on VFR phone-camera footage
+      // (which has variable frame durations), especially at 240Hz where mpv must
+      // fit ~59.76fps frames into 240Hz refresh slots with variable timing.
+      await native.setProperty('video-sync', 'audio');
+      // Drop frames at both the decode and output stages when behind schedule —
+      // keeps A/V sync intact during transient CPU/GPU spikes.
+      await native.setProperty('framedrop', 'yes');
+      // 400 MiB demux buffer ≈ 50 s at 60 Mbps; prevents stalls in high-bitrate files.
+      await native.setProperty('demuxer-max-bytes', '400MiB');
+      await native.setProperty('demuxer-readahead-secs', '30');
+      // Seekable RAM cache so scrubbing stays smooth in large files.
+      await native.setProperty('cache', 'yes');
+      await native.setProperty('cache-secs', '30');
     } catch (_) {}
   }
 
@@ -163,26 +230,82 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await Process.start(_vlcPath!, [_videoPath!]);
   }
 
+  List<String> _scanSubtitles(String videoPath) {
+    try {
+      final dir = Directory(p.dirname(videoPath));
+      if (!dir.existsSync()) return [];
+      return dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => _kSubtitleExts.contains(
+              p.extension(f.path).toLowerCase().replaceFirst('.', '')))
+          .map((f) => f.path)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _attachSubtitle(String path) async {
+    setState(() => _activeSubtitle = path);
+    try {
+      final native = _sharedPlayer.platform as NativePlayer;
+      await native.setProperty('sub-file', path);
+      await native.setProperty('sub-visibility', 'yes');
+    } catch (_) {}
+  }
+
+  void _disableSubtitles() {
+    setState(() => _activeSubtitle = null);
+    try {
+      (_sharedPlayer.platform as NativePlayer).setProperty('sub-visibility', 'no');
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFullscreen() async {
+    final entering = !ref.read(playerFullscreenProvider);
+    ref.read(playerFullscreenProvider.notifier).state = entering;
+    await windowManager.setFullScreen(entering);
+  }
+
   void _openVideo(String path) {
-    setState(() => _videoPath = path);
-    // Defer open() one frame so the Video widget is mounted before media_kit
-    // tries to attach to it (avoids silent playback failure on first launch).
+    final subs = _scanSubtitles(path);
+    setState(() {
+      _videoPath = path;
+      _availableSubtitles = subs;
+      _activeSubtitle = subs.isNotEmpty ? subs.first : null;
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await _player.open(Media(path));
-      if (mounted) _player.play();
+      if (!mounted) return;
+
+      final vol = ref.read(settingsProvider).playerVolume;
+      try { await _player.setVolume(vol); } catch (_) {}
+      if (!mounted) return;
+
+      if (_activeSubtitle != null) {
+        await _attachSubtitle(_activeSubtitle!);
+        if (!mounted) return;
+      }
+
+      _player.play();
       if (mounted) ref.read(settingsProvider.notifier).setLastVideoPath(path);
     });
   }
 
   void _closeVideo() {
     _player.stop();
-    setState(() => _videoPath = null);
+    setState(() {
+      _videoPath = null;
+      _availableSubtitles = [];
+      _activeSubtitle = null;
+    });
   }
 
   void _stopSyncplay() {
     if (_syncplayProcess != null) {
-      // /T kills the process tree (Syncplay + VLC child) on Windows
       Process.run('taskkill', ['/F', '/T', '/PID', '${_syncplayProcess!.pid}']);
     }
     setState(() => _syncplayProcess = null);
@@ -214,10 +337,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _stderrSub?.cancel();
 
     final process = await Process.start(_syncplayPath!, args);
-    setState(() {
-      _syncplayProcess = process;
-      _syncplayLogs.clear();
-    });
+    setState(() { _syncplayProcess = process; _syncplayLogs.clear(); });
 
     final decoder = utf8.decoder;
     _stdoutSub = process.stdout
@@ -243,9 +363,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Widget build(BuildContext context) {
     final accent = _palette.primary;
     final settings = ref.watch(settingsProvider);
+    final isFullscreen = ref.watch(playerFullscreenProvider);
 
-    // Guard: inactive State's listener must not consume — it would clear the
-    // provider before the newly-created active State's initState callback runs.
     ref.listen<String?>(playerOpenRequestProvider, (_, path) {
       if (path != null && ref.read(activeTabProvider) == AppTab.player) {
         ref.read(playerOpenRequestProvider.notifier).state = null;
@@ -253,17 +372,54 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
     });
 
+    // ── Fullscreen mode: just the video + exit button ─────────────────────
+    if (isFullscreen) {
+      return GestureDetector(
+        onDoubleTap: _toggleFullscreen,
+        child: Stack(
+          children: [
+            Positioned.fill(child: Video(controller: _controller)),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Tooltip(
+                message: 'Exit fullscreen  (F / Esc)',
+                child: InkWell(
+                  onTap: _toggleFullscreen,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.fullscreen_exit_rounded,
+                      color: Colors.white70,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── Normal mode ───────────────────────────────────────────────────────
     return DropTarget(
       onDragDone: (details) {
         final path = details.files.first.path;
         if (_isVideoFile(path)) _openVideo(path);
       },
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
@@ -274,7 +430,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     color: accent,
                   ),
                 ),
-                if (_videoPath != null)
+                if (_videoPath != null) ...[
+                  if (_availableSubtitles.isNotEmpty)
+                    _CcButton(
+                      subtitles: _availableSubtitles,
+                      activeSubtitle: _activeSubtitle,
+                      accent: accent,
+                      onSelect: _attachSubtitle,
+                      onDisable: _disableSubtitles,
+                    ).animate().fadeIn(duration: 200.ms),
+                  const SizedBox(width: 4),
                   TextButton.icon(
                     onPressed: _closeVideo,
                     icon: const Icon(Icons.close_rounded, size: 16),
@@ -284,108 +449,195 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                   ).animate().fadeIn(duration: 200.ms),
+                ],
               ],
             ),
-            const SizedBox(height: 24),
+          ),
 
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, anim) {
-                final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
-                return FadeTransition(
-                  opacity: anim,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
-                    child: child,
-                  ),
-                );
-              },
-              child: _videoPath != null
-                  ? _VideoArea(
-                      key: const ValueKey('video'),
-                      controller: _controller,
-                      accent: accent,
-                      onDrop: _openVideo,
-                    )
-                  : _PlayerPlaceholder(
-                      key: const ValueKey('placeholder'),
-                      accent: accent,
-                      onTap: _pickVideo,
-                      onDrop: _openVideo,
-                      lastVideoPath: settings.lastVideoPath.isEmpty
-                          ? null
-                          : settings.lastVideoPath,
-                      onResume: settings.lastVideoPath.isEmpty
-                          ? null
-                          : () => _openVideo(settings.lastVideoPath),
+          const SizedBox(height: 16),
+
+          // Video area — Expanded to fill available height
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) {
+                  final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+                  return FadeTransition(
+                    opacity: anim,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+                      child: child,
                     ),
+                  );
+                },
+                child: _videoPath != null
+                    ? _VideoArea(
+                        key: const ValueKey('video'),
+                        controller: _controller,
+                        accent: accent,
+                        onDrop: _openVideo,
+                        onDoubleTap: _toggleFullscreen,
+                      )
+                    : _PlayerPlaceholder(
+                        key: const ValueKey('placeholder'),
+                        accent: accent,
+                        onTap: _pickVideo,
+                        onDrop: _openVideo,
+                        lastVideoPath: settings.lastVideoPath.isEmpty
+                            ? null
+                            : settings.lastVideoPath,
+                        onResume: settings.lastVideoPath.isEmpty
+                            ? null
+                            : () => _openVideo(settings.lastVideoPath),
+                      ),
+              ),
             ),
+          ),
 
-            if (_videoPath != null) ...[
-              const SizedBox(height: 10),
-              _FilenameBar(path: _videoPath!, accent: accent)
-                  .animate()
-                  .fadeIn(duration: 200.ms)
-                  .slideY(begin: 0.1),
-            ],
-
-            const SizedBox(height: 16),
-
-            Row(
+          // Controls below the video (scrollable if logs expand)
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: SmallButton(
-                    label: _videoPath == null ? 'Open Video' : 'Change Video',
-                    icon: Icons.folder_open_rounded,
-                    color: accent,
-                    onTap: _pickVideo,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _VlcButton(
-                  enabled: _vlcPath != null && _videoPath != null,
-                  accent: accent,
-                  onTap: _launchVlc,
-                ),
-                const SizedBox(width: 12),
-                _SyncplayButton(
+                if (_videoPath != null) ...[
+                  const SizedBox(height: 10),
+                  _FilenameBar(path: _videoPath!, accent: accent)
+                      .animate()
+                      .fadeIn(duration: 200.ms)
+                      .slideY(begin: 0.1),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SmallButton(
+                        label: _videoPath == null ? 'Open Video' : 'Change Video',
+                        icon: Icons.folder_open_rounded,
+                        color: accent,
+                        onTap: _pickVideo,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _VlcButton(
+                      enabled: _vlcPath != null && _videoPath != null,
+                      accent: accent,
+                      onTap: _launchVlc,
+                    ),
+                    const SizedBox(width: 12),
+                    _SyncplayButton(
+                      found: _syncplayFound,
+                      enabled: _syncplayFound && _videoPath != null,
+                      running: _syncplayProcess != null,
+                      accent: accent,
+                      onTap: _launchSyncplay,
+                      onStop: _stopSyncplay,
+                    ),
+                  ],
+                ).animate().fadeIn(duration: 300.ms, delay: 100.ms),
+                const SizedBox(height: 16),
+                _SyncplaySection(
                   found: _syncplayFound,
-                  enabled: _syncplayFound && _videoPath != null,
-                  running: _syncplayProcess != null,
                   accent: accent,
-                  onTap: _launchSyncplay,
-                  onStop: _stopSyncplay,
+                  usernameCtrl: _usernameCtrl,
+                  roomCtrl: _roomCtrl,
+                  onUsernameChanged: (v) =>
+                      ref.read(settingsProvider.notifier).setSyncplayUsername(v),
+                  onRoomChanged: (v) =>
+                      ref.read(settingsProvider.notifier).setSyncplayRoom(v),
+                  onPortChanged: (v) =>
+                      ref.read(settingsProvider.notifier).setSyncplayPort(v),
+                  selectedPort: settings.syncplayPort,
+                ).animate().fadeIn(duration: 300.ms, delay: 150.ms),
+                if (_syncplayLogs.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _SyncplayLogPanel(
+                    logs: _syncplayLogs,
+                    accent: accent,
+                    expanded: _showLogs,
+                    onToggle: () => setState(() => _showLogs = !_showLogs),
+                  ).animate().fadeIn(duration: 200.ms),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+class _CcButton extends StatelessWidget {
+  final List<String> subtitles;
+  final String? activeSubtitle;
+  final Color accent;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onDisable;
+
+  const _CcButton({
+    required this.subtitles,
+    required this.activeSubtitle,
+    required this.accent,
+    required this.onSelect,
+    required this.onDisable,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String?>(
+      tooltip: 'Subtitles',
+      icon: Icon(
+        Icons.closed_caption_rounded,
+        size: 18,
+        color: activeSubtitle != null ? accent : kTextMuted,
+      ),
+      color: kSurfaceColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      itemBuilder: (_) => [
+        PopupMenuItem<String?>(
+          value: '',
+          child: Row(
+            children: [
+              Icon(
+                activeSubtitle == null ? Icons.check_rounded : Icons.subtitles_off_outlined,
+                size: 15,
+                color: activeSubtitle == null ? accent : kTextMuted,
+              ),
+              const SizedBox(width: 8),
+              const Text('None', style: TextStyle(fontSize: 13, color: kTextPrimary)),
+            ],
+          ),
+        ),
+        for (final sub in subtitles)
+          PopupMenuItem<String?>(
+            value: sub,
+            child: Row(
+              children: [
+                Icon(
+                  activeSubtitle == sub ? Icons.check_rounded : Icons.subtitles_outlined,
+                  size: 15,
+                  color: activeSubtitle == sub ? accent : kTextMuted,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  p.basename(sub),
+                  style: const TextStyle(fontSize: 13, color: kTextPrimary),
                 ),
               ],
-            ).animate().fadeIn(duration: 300.ms, delay: 100.ms),
-
-            const SizedBox(height: 16),
-            _SyncplaySection(
-              found: _syncplayFound,
-              accent: accent,
-              usernameCtrl: _usernameCtrl,
-              roomCtrl: _roomCtrl,
-              onUsernameChanged: (v) =>
-                  ref.read(settingsProvider.notifier).setSyncplayUsername(v),
-              onRoomChanged: (v) =>
-                  ref.read(settingsProvider.notifier).setSyncplayRoom(v),
-              onPortChanged: (v) =>
-                  ref.read(settingsProvider.notifier).setSyncplayPort(v),
-              selectedPort: settings.syncplayPort,
-            ).animate().fadeIn(duration: 300.ms, delay: 150.ms),
-
-            if (_syncplayLogs.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _SyncplayLogPanel(
-                logs: _syncplayLogs,
-                accent: accent,
-                expanded: _showLogs,
-                onToggle: () => setState(() => _showLogs = !_showLogs),
-              ).animate().fadeIn(duration: 200.ms),
-            ],
-          ],
-        ),
-      ),
+            ),
+          ),
+      ],
+      onSelected: (val) {
+        if (val == null || val.isEmpty) {
+          onDisable();
+        } else {
+          onSelect(val);
+        }
+      },
     );
   }
 }
@@ -396,12 +648,14 @@ class _VideoArea extends StatefulWidget {
   final VideoController controller;
   final Color accent;
   final ValueChanged<String> onDrop;
+  final VoidCallback onDoubleTap;
 
   const _VideoArea({
     super.key,
     required this.controller,
     required this.accent,
     required this.onDrop,
+    required this.onDoubleTap,
   });
 
   @override
@@ -421,55 +675,59 @@ class _VideoAreaState extends State<_VideoArea> {
         final path = details.files.first.path;
         if (_isVideoFile(path)) widget.onDrop(path);
       },
-      child: Stack(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 320,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: _isDragging
-                    ? widget.accent
-                    : widget.accent.withValues(alpha: 0.3),
-                width: _isDragging ? 2 : 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                    color: widget.accent.withValues(alpha: 0.15),
-                    blurRadius: 24),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Video(controller: widget.controller),
-          ),
-          if (_isDragging)
+      child: GestureDetector(
+        onDoubleTap: widget.onDoubleTap,
+        child: Stack(
+          children: [
             Positioned.fill(
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
+                  color: Colors.black,
                   borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.file_download_rounded,
-                        color: widget.accent, size: 42),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Drop to change video',
-                      style: TextStyle(
-                        color: widget.accent,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  border: Border.all(
+                    color: _isDragging
+                        ? widget.accent
+                        : widget.accent.withValues(alpha: 0.3),
+                    width: _isDragging ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                        color: widget.accent.withValues(alpha: 0.15),
+                        blurRadius: 24),
                   ],
                 ),
+                clipBehavior: Clip.antiAlias,
+                child: Video(controller: widget.controller),
               ),
             ),
-        ],
+            if (_isDragging)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.file_download_rounded,
+                          color: widget.accent, size: 42),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Drop to change video',
+                        style: TextStyle(
+                          color: widget.accent,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -521,7 +779,8 @@ class _PlayerPlaceholderState extends State<_PlayerPlaceholder> {
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            height: 280,
+            // Fill available height (from Expanded parent)
+            height: double.infinity,
             decoration: BoxDecoration(
               color: _isActive
                   ? widget.accent.withValues(alpha: 0.06)
@@ -658,7 +917,6 @@ class _VlcButtonState extends State<_VlcButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Subtle orange hue shift toward VLC's brand colour.
     final color = widget.enabled
         ? Color.lerp(widget.accent, const Color(0xFFFF6600), 0.22)!
         : kTextMuted;
@@ -1075,7 +1333,6 @@ class _SyncplayLogPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header / toggle
           InkWell(
             onTap: onToggle,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),

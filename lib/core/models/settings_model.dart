@@ -12,6 +12,12 @@ class AppSettings {
   final String lastVideoPath;
   final List<int>? tabOrder;
   final bool deleteAfterDecode;
+  final double playerVolume;
+  final double windowX;
+  final double windowY;
+  final double windowWidth;
+  final double windowHeight;
+  final bool windowMaximized;
 
   const AppSettings({
     this.password = '',
@@ -27,6 +33,12 @@ class AppSettings {
     this.lastVideoPath = '',
     this.tabOrder,
     this.deleteAfterDecode = false,
+    this.playerVolume = 100.0,
+    this.windowX = -1,
+    this.windowY = -1,
+    this.windowWidth = -1,
+    this.windowHeight = -1,
+    this.windowMaximized = false,
   });
 
   AppSettings copyWith({
@@ -43,6 +55,12 @@ class AppSettings {
     String? lastVideoPath,
     List<int>? tabOrder,
     bool? deleteAfterDecode,
+    double? playerVolume,
+    double? windowX,
+    double? windowY,
+    double? windowWidth,
+    double? windowHeight,
+    bool? windowMaximized,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -61,6 +79,12 @@ class AppSettings {
       lastVideoPath: lastVideoPath ?? this.lastVideoPath,
       tabOrder: tabOrder ?? this.tabOrder,
       deleteAfterDecode: deleteAfterDecode ?? this.deleteAfterDecode,
+      playerVolume: playerVolume ?? this.playerVolume,
+      windowX: windowX ?? this.windowX,
+      windowY: windowY ?? this.windowY,
+      windowWidth: windowWidth ?? this.windowWidth,
+      windowHeight: windowHeight ?? this.windowHeight,
+      windowMaximized: windowMaximized ?? this.windowMaximized,
     );
   }
 }

@@ -381,6 +381,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                               onCancel: () =>
                                   ref.read(downloadProvider.notifier).cancel(),
                               onDecodeThis: (path) {
+                                ref.read(downloadProvider.notifier).dismiss();
                                 ref
                                     .read(decodeOpenRequestProvider.notifier)
                                     .state = path;
