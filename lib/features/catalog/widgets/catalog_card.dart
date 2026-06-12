@@ -844,6 +844,7 @@ class _ThumbnailState extends State<_Thumbnail> {
                   CachedNetworkImage(
                     imageUrl: widget.url,
                     cacheManager: CatalogCacheManager.instance,
+                    memCacheWidth: 400,
                     fit: BoxFit.cover,
                     placeholder: (_, _) => _placeholder(),
                     errorWidget: (_, _, _) => _placeholder(),
@@ -857,6 +858,7 @@ class _ThumbnailState extends State<_Thumbnail> {
                   CachedNetworkImage(
                     imageUrl: widget.url,
                     cacheManager: CatalogCacheManager.instance,
+                    memCacheWidth: 400,
                     fit: foregroundFit,
                     placeholder: (_, _) => const SizedBox.shrink(),
                     errorWidget: (_, _, _) => const SizedBox.shrink(),

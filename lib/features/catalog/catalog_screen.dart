@@ -279,6 +279,11 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
               },
               onToggleDownloads: () =>
                   setState(() => _showDownloads = !_showDownloads),
+              onOpenFolder: () {
+                final dir = ref.read(settingsProvider).catalogDownloadDirectory;
+                Process.run('explorer.exe',
+                    [dir.isNotEmpty ? dir : AppDirectories.downloaded]);
+              },
             ),
             const SizedBox(height: 12),
             if (!isSeriesTab && !_showDownloads && catalogState is CatalogLoaded) ...[
@@ -380,6 +385,8 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                                   ref.read(downloadProvider.notifier).dismiss(),
                               onCancel: () =>
                                   ref.read(downloadProvider.notifier).cancel(),
+                              onRetry: () =>
+                                  ref.read(downloadProvider.notifier).retryFailed(),
                               onDecodeThis: (path) {
                                 ref.read(downloadProvider.notifier).dismiss();
                                 ref
@@ -531,6 +538,7 @@ class _TopBar extends StatelessWidget {
   final VoidCallback? onRefresh;
   final VoidCallback onClearUrl;
   final VoidCallback onToggleDownloads;
+  final VoidCallback onOpenFolder;
 
   const _TopBar({
     required this.palette,
@@ -544,6 +552,7 @@ class _TopBar extends StatelessWidget {
     required this.onRefresh,
     required this.onClearUrl,
     required this.onToggleDownloads,
+    required this.onOpenFolder,
   });
 
   @override
@@ -571,6 +580,14 @@ class _TopBar extends StatelessWidget {
           palette: palette,
           onTap: onToggleDownloads,
         ),
+        if (showDownloads) ...[
+          const SizedBox(width: 6),
+          _IconBtn(
+            icon: Icons.folder_open_rounded,
+            tooltip: 'Open downloads folder',
+            onTap: onOpenFolder,
+          ),
+        ],
         if (sheetUrl != null) ...[
           const SizedBox(width: 6),
           _IconBtn(
@@ -1053,6 +1070,7 @@ class _DownloadPanel extends StatelessWidget {
   final TabPalette palette;
   final VoidCallback onDismiss;
   final VoidCallback onCancel;
+  final VoidCallback onRetry;
   final void Function(String filePath) onDecodeThis;
 
   const _DownloadPanel({
@@ -1061,6 +1079,7 @@ class _DownloadPanel extends StatelessWidget {
     required this.palette,
     required this.onDismiss,
     required this.onCancel,
+    required this.onRetry,
     required this.onDecodeThis,
   });
 
@@ -1109,6 +1128,7 @@ class _DownloadPanel extends StatelessWidget {
         DownloadError(:final message) => _ErrorDownload(
             message: message,
             onDismiss: onDismiss,
+            onRetry: onRetry,
           ),
         _ => const SizedBox.shrink(),
       },
@@ -1294,8 +1314,13 @@ class _DoneDownload extends StatelessWidget {
 class _ErrorDownload extends StatelessWidget {
   final String message;
   final VoidCallback onDismiss;
+  final VoidCallback onRetry;
 
-  const _ErrorDownload({required this.message, required this.onDismiss});
+  const _ErrorDownload({
+    required this.message,
+    required this.onDismiss,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1304,9 +1329,15 @@ class _ErrorDownload extends StatelessWidget {
         const Icon(Icons.error_outline_rounded, size: 18, color: Colors.redAccent),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(message, maxLines: 2, style: TextStyle(fontSize: 12, color: kTextSecondary)),
+          child: Text(message, maxLines: 2, style: const TextStyle(fontSize: 12, color: kTextSecondary)),
         ),
         const SizedBox(width: 12),
+        TextButton(
+          onPressed: onRetry,
+          style: TextButton.styleFrom(foregroundColor: Colors.redAccent, padding: EdgeInsets.zero),
+          child: const Text('Retry', style: TextStyle(fontSize: 12)),
+        ),
+        const SizedBox(width: 4),
         TextButton(
           onPressed: onDismiss,
           style: TextButton.styleFrom(foregroundColor: kTextMuted, padding: EdgeInsets.zero),
@@ -1532,6 +1563,7 @@ class _DownloadRecordRow extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: record.thumbnailUrl,
                         cacheManager: CatalogCacheManager.instance,
+                        memCacheWidth: 200,
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => Container(
                           color: kSurface2Color,
