@@ -732,6 +732,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // ── Decode Options ───────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Decode Options',
+            accent: accent,
+            children: [
+              _SettingRow(
+                icon: Icons.delete_outline_rounded,
+                title: 'Delete Source After Decode',
+                subtitle:
+                    'Automatically delete the encoded mask MP4 once decoding completes successfully.',
+                accent: accent,
+                control: Switch(
+                  value: settings.deleteAfterDecode,
+                  onChanged: (v) => ref
+                      .read(settingsProvider.notifier)
+                      .setDeleteAfterDecode(v),
+                  activeThumbColor: accent,
+                  activeTrackColor: accent.withValues(alpha: 0.3),
+                  inactiveThumbColor: kTextMuted,
+                  inactiveTrackColor: kSurface2Color,
+                ),
+              ),
+            ],
+          ).animate().fadeIn(duration: 300.ms, delay: 200.ms),
+
+          const SizedBox(height: 20),
+
           if (!updatePending) ...[
             // ── Updates ────────────────────────────────────────────────────
             updatesGroup,

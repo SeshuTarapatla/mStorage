@@ -470,22 +470,29 @@ class DownloadNotifier extends Notifier<DownloadState> {
   Future<void> _processQueue() async {
     _running = true;
     String? lastFilePath;
+    final failed = <String>[];
 
     while (_queue.isNotEmpty && !_cancelled) {
       final job = _queue.removeAt(0);
       try {
-        lastFilePath = await _runJob(job);
+        final path = await _runJob(job);
+        if (path.isNotEmpty) lastFilePath = path;
       } catch (e) {
-        if (!_cancelled && !_disposed) state = DownloadError('Download failed: $e');
-        _queue.clear();
-        _running = false;
-        return;
+        if (_cancelled || _disposed) break;
+        failed.add('"${job.title}": $e');
+        // Continue with remaining jobs.
       }
     }
 
     _running = false;
-    if (!_cancelled && !_disposed && state is! DownloadError) {
-      state = lastFilePath != null ? DownloadDone(lastFilePath) : DownloadIdle();
+    if (_cancelled || _disposed) return;
+    if (failed.isNotEmpty) {
+      final summary = '${failed.length} download(s) failed:\n${failed.join('\n')}';
+      state = DownloadError(summary);
+    } else if (lastFilePath != null) {
+      state = DownloadDone(lastFilePath);
+    } else {
+      state = DownloadIdle();
     }
   }
 
@@ -540,6 +547,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
     int received = 0;
     var lastTick = DateTime.now();
     int bytesInWindow = 0;
+    bool downloadError = false;
 
     try {
       await for (final chunk in response.stream) {
@@ -563,16 +571,19 @@ class DownloadNotifier extends Notifier<DownloadState> {
           bytesInWindow = 0;
         }
       }
+    } catch (_) {
+      downloadError = true;
+      rethrow;
     } finally {
       await sink.flush();
       await sink.close();
       _client?.close();
+      if (_cancelled || downloadError) {
+        try { file.deleteSync(); } catch (_) {}
+      }
     }
 
-    if (_cancelled) {
-      try { file.deleteSync(); } catch (_) {}
-      return '';
-    }
+    if (_cancelled) return '';
 
     // Record in history.
     await ref.read(downloadHistoryProvider.notifier).add(DownloadRecord(

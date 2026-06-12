@@ -53,7 +53,8 @@ class DecodeNotifier extends Notifier<DecodeState> {
 
     try {
       final tmpDir = await getTemporaryDirectory();
-      final cacheDir = Directory(p.join(tmpDir.path, 'mstorage_cache'));
+      final uid = DateTime.now().microsecondsSinceEpoch.toString();
+      final cacheDir = Directory(p.join(tmpDir.path, 'mstorage_cache', uid));
       await cacheDir.create(recursive: true);
 
       final title = p.basenameWithoutExtension(config.videoPath);
@@ -112,7 +113,7 @@ class DecodeNotifier extends Notifier<DecodeState> {
           .map((f) => f.path)
           .toList();
 
-      await cacheDir.delete(recursive: true);
+      try { await cacheDir.delete(recursive: true); } catch (_) {}
 
       state = state.copyWith(
         step: DecodeStep.done,

@@ -11,6 +11,7 @@ class AppSettings {
   final int startupTab;
   final String lastVideoPath;
   final List<int>? tabOrder;
+  final bool deleteAfterDecode;
 
   const AppSettings({
     this.password = '',
@@ -25,6 +26,7 @@ class AppSettings {
     this.startupTab = 0,
     this.lastVideoPath = '',
     this.tabOrder,
+    this.deleteAfterDecode = false,
   });
 
   AppSettings copyWith({
@@ -40,6 +42,7 @@ class AppSettings {
     int? startupTab,
     String? lastVideoPath,
     List<int>? tabOrder,
+    bool? deleteAfterDecode,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -57,6 +60,7 @@ class AppSettings {
       startupTab: startupTab ?? this.startupTab,
       lastVideoPath: lastVideoPath ?? this.lastVideoPath,
       tabOrder: tabOrder ?? this.tabOrder,
+      deleteAfterDecode: deleteAfterDecode ?? this.deleteAfterDecode,
     );
   }
 }
