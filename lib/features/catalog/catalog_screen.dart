@@ -17,8 +17,10 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
 import '../shell/app_shell.dart';
 import 'catalog_notifier.dart';
+import 'config_service.dart';
 import 'models/catalog_entry.dart';
 import 'models/series_entry.dart';
+import 'request_notifier.dart';
 import 'screens/series_detail_screen.dart';
 import 'series_notifier.dart';
 import 'widgets/catalog_card.dart';
@@ -187,11 +189,20 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
     setState(() => _openedSeries = entry);
   }
 
+  void _showRequestDialog(BuildContext context) {
+    ref.read(requestProvider.notifier).reset();
+    showDialog<void>(
+      context: context,
+      builder: (_) => const _RequestDialog(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isSeriesTab = _subTabIndex == 1;
     final palette = isSeriesTab ? kSeriesPalette : AppTab.catalog.palette;
     final sheetUrl = ref.watch(sheetUrlProvider);
+    final config = ref.watch(sheetConfigProvider).valueOrNull ?? const SheetConfig();
     final catalogState = ref.watch(catalogProvider);
     final seriesState = ref.watch(seriesProvider);
     final downloadState = ref.watch(downloadProvider);
@@ -257,6 +268,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
               searchController: _searchController,
               showDownloads: _showDownloads,
               historyCount: historyCount,
+              hasRequestFeature: config.hasRequestFeature,
               onSearch: (v) => setState(() => _search = v),
               onSubmitUrl: (url) async {
                 await ref.read(sheetUrlProvider.notifier).save(url);
@@ -284,6 +296,9 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                 Process.run('explorer.exe',
                     [dir.isNotEmpty ? dir : AppDirectories.downloaded]);
               },
+              onRequest: config.hasRequestFeature
+                  ? () => _showRequestDialog(context)
+                  : null,
             ),
             const SizedBox(height: 12),
             if (!isSeriesTab && !_showDownloads && catalogState is CatalogLoaded) ...[
@@ -533,12 +548,14 @@ class _TopBar extends StatelessWidget {
   final TextEditingController searchController;
   final bool showDownloads;
   final int historyCount;
+  final bool hasRequestFeature;
   final ValueChanged<String> onSearch;
   final ValueChanged<String> onSubmitUrl;
   final VoidCallback? onRefresh;
   final VoidCallback onClearUrl;
   final VoidCallback onToggleDownloads;
   final VoidCallback onOpenFolder;
+  final VoidCallback? onRequest;
 
   const _TopBar({
     required this.palette,
@@ -547,12 +564,14 @@ class _TopBar extends StatelessWidget {
     required this.searchController,
     required this.showDownloads,
     required this.historyCount,
+    required this.hasRequestFeature,
     required this.onSearch,
     required this.onSubmitUrl,
     required this.onRefresh,
     required this.onClearUrl,
     required this.onToggleDownloads,
     required this.onOpenFolder,
+    this.onRequest,
   });
 
   @override
@@ -600,6 +619,14 @@ class _TopBar extends StatelessWidget {
             icon: Icons.link_off_rounded,
             tooltip: 'Change sheet URL',
             onTap: onClearUrl,
+          ),
+        ],
+        if (hasRequestFeature && onRequest != null) ...[
+          const SizedBox(width: 6),
+          _IconBtn(
+            icon: Icons.add_circle_outline_rounded,
+            tooltip: 'Request a movie or series',
+            onTap: onRequest,
           ),
         ],
       ],
@@ -2403,6 +2430,359 @@ class _SeriesGridState extends State<_SeriesGrid> {
                 delay: Duration(milliseconds: min(i, 9) * 35))
             .slideY(begin: 0.06, duration: 280.ms, curve: Curves.easeOut);
       },
+    );
+  }
+}
+
+// ── Request Dialog ─────────────────────────────────────────────────────────────
+
+class _RequestDialog extends ConsumerStatefulWidget {
+  const _RequestDialog();
+
+  @override
+  ConsumerState<_RequestDialog> createState() => _RequestDialogState();
+}
+
+class _RequestDialogState extends ConsumerState<_RequestDialog> {
+  final _ctrl = TextEditingController();
+  final _palette = AppTab.catalog.palette;
+  RequestReady? _lastReady;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    // Auto-validate once a plausible IMDB URL is pasted.
+    if (value.contains('imdb.com/title/tt')) {
+      ref.read(requestProvider.notifier).validate(value);
+    } else {
+      ref.read(requestProvider.notifier).reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(requestProvider);
+
+    return Dialog(
+      backgroundColor: kSurfaceColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(children: [
+                Icon(Icons.add_circle_outline_rounded,
+                    color: _palette.primary, size: 18),
+                const SizedBox(width: 8),
+                Text('Request',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: _palette.primary)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Icon(Icons.close_rounded,
+                      size: 18, color: kTextMuted),
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              // URL input
+              TextField(
+                controller: _ctrl,
+                autofocus: true,
+                enabled: state is! RequestSubmitting && state is! RequestSuccess,
+                onChanged: _onChanged,
+                style: TextStyle(fontSize: 13, color: kTextPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Paste IMDB URL  (imdb.com/title/tt…)',
+                  hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
+                  filled: true,
+                  fillColor: kSurface2Color,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: kBorderColor)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: kBorderColor)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: _palette.primary)),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 12),
+                  suffixIcon: state is RequestValidating
+                      ? Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: _palette.primary),
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+
+              // State-driven content
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: _buildStateContent(state),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Footer actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                        foregroundColor: kTextSecondary),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: state is RequestReady
+                        ? () => ref.read(requestProvider.notifier).submit()
+                        : state is RequestSuccess
+                            ? () => Navigator.pop(context)
+                            : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _palette.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: state is RequestSubmitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.black54),
+                          )
+                        : Text(state is RequestSuccess ? 'Done' : 'Submit'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStateContent(RequestState state) {
+    if (state is RequestReady) {
+      _lastReady = state;
+      return Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: _PreviewCard(state: state, palette: _palette),
+      );
+    }
+    if (state is RequestSubmitting) {
+      return _lastReady != null
+          ? Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: _PreviewCard(state: _lastReady!, palette: _palette),
+            )
+          : const SizedBox.shrink();
+    }
+    if (state is RequestSuccess) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_lastReady != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: _PreviewCard(state: _lastReady!, palette: _palette),
+            ),
+          _StatusBanner(
+            icon: Icons.check_circle_outline_rounded,
+            color: const Color(0xFF4ADE80),
+            message: 'Request submitted! The admin will review it shortly.',
+          ),
+        ],
+      );
+    }
+    if (state is RequestDuplicate) {
+      final preview = RequestReady(
+        imdbId: state.imdbId,
+        imdbUrl: state.imdbUrl,
+        title: state.title,
+        year: state.year,
+        type: state.type,
+        posterUrl: state.posterUrl,
+      );
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: _PreviewCard(state: preview, palette: _palette),
+          ),
+          _StatusBanner(
+            icon: Icons.info_outline_rounded,
+            color: const Color(0xFFF59E0B),
+            message: '"${state.title}" has already been requested.',
+          ),
+        ],
+      );
+    }
+    if (state is RequestError) {
+      return _StatusBanner(
+        icon: Icons.error_outline_rounded,
+        color: Colors.redAccent,
+        message: state.message,
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+class _PreviewCard extends StatelessWidget {
+  final RequestReady state;
+  final TabPalette palette;
+
+  const _PreviewCard({required this.state, required this.palette});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kSurface2Color,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: kBorderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (state.posterUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: CachedNetworkImage(
+                imageUrl: state.posterUrl,
+                width: 56,
+                height: 84,
+                fit: BoxFit.cover,
+                cacheManager: CatalogCacheManager.instance,
+                errorWidget: (_, _, _) => _posterPlaceholder(),
+              ),
+            )
+          else
+            _posterPlaceholder(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  state.title,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: kTextPrimary),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Wrap(spacing: 6, children: [
+                  if (state.year != null)
+                    _Chip(label: '${state.year}'),
+                  _Chip(label: state.type),
+                  _Chip(label: state.imdbId),
+                ]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _posterPlaceholder() => Container(
+        width: 56,
+        height: 84,
+        decoration: BoxDecoration(
+          color: kSurface2Color,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: kBorderColor),
+        ),
+        child: const Icon(Icons.movie_rounded, size: 24, color: kTextMuted),
+      );
+}
+
+class _StatusBanner extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String message;
+
+  const _StatusBanner({
+    required this.icon,
+    required this.color,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(fontSize: 12, color: kTextSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+
+  const _Chip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: kSurface2Color,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: kBorderColor),
+      ),
+      child: Text(label,
+          style: const TextStyle(fontSize: 10, color: kTextSecondary)),
     );
   }
 }
