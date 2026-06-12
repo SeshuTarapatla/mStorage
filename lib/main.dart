@@ -15,17 +15,31 @@ void main() async {
   final container = ProviderContainer();
   await container.read(settingsProvider.notifier).load();
 
+  final settings = container.read(settingsProvider);
+  final hasSavedBounds = settings.windowWidth > 0 && settings.windowHeight > 0;
+
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      size: Size(1100, 740),
-      minimumSize: Size(860, 600),
-      center: true,
+    WindowOptions(
+      size: hasSavedBounds
+          ? Size(settings.windowWidth, settings.windowHeight)
+          : const Size(1100, 740),
+      minimumSize: const Size(860, 600),
+      // Only center when no saved position exists
+      center: !hasSavedBounds,
       title: 'mStorage',
       titleBarStyle: TitleBarStyle.hidden,
       backgroundColor: Colors.transparent,
     ),
     () async {
+      // Restore saved position if valid (both axes non-negative)
+      if (hasSavedBounds && settings.windowX >= 0 && settings.windowY >= 0) {
+        await windowManager.setPosition(Offset(settings.windowX, settings.windowY));
+      }
+      // Restore maximized state
+      if (settings.windowMaximized) {
+        await windowManager.maximize();
+      }
       await windowManager.show();
       await windowManager.focus();
     },

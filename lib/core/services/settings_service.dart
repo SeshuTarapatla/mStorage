@@ -28,6 +28,12 @@ const _kStartupTab = 'startup_tab';
 const _kLastVideoPath = 'last_video_path';
 const _kTabOrder = 'tab_order';
 const _kDeleteAfterDecode = 'setting_delete_after_decode';
+const _kPlayerVolume = 'player_volume';
+const _kWindowX = 'window_x';
+const _kWindowY = 'window_y';
+const _kWindowWidth = 'window_width';
+const _kWindowHeight = 'window_height';
+const _kWindowMaximized = 'window_maximized';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -54,6 +60,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
           .map(int.parse)
           .toList(),
       deleteAfterDecode: _prefs.getBool(_kDeleteAfterDecode) ?? false,
+      playerVolume: _prefs.getDouble(_kPlayerVolume) ?? 100.0,
+      windowX: _prefs.getDouble(_kWindowX) ?? -1,
+      windowY: _prefs.getDouble(_kWindowY) ?? -1,
+      windowWidth: _prefs.getDouble(_kWindowWidth) ?? -1,
+      windowHeight: _prefs.getDouble(_kWindowHeight) ?? -1,
+      windowMaximized: _prefs.getBool(_kWindowMaximized) ?? false,
     );
   }
 
@@ -117,6 +129,29 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await _prefs.setBool(_kDeleteAfterDecode, value);
   }
 
+  Future<void> setPlayerVolume(double value) async {
+    state = state.copyWith(playerVolume: value);
+    await _prefs.setDouble(_kPlayerVolume, value);
+  }
+
+  Future<void> setWindowBounds({
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) async {
+    state = state.copyWith(windowX: x, windowY: y, windowWidth: width, windowHeight: height);
+    await _prefs.setDouble(_kWindowX, x);
+    await _prefs.setDouble(_kWindowY, y);
+    await _prefs.setDouble(_kWindowWidth, width);
+    await _prefs.setDouble(_kWindowHeight, height);
+  }
+
+  Future<void> setWindowMaximized(bool value) async {
+    state = state.copyWith(windowMaximized: value);
+    await _prefs.setBool(_kWindowMaximized, value);
+  }
+
   Future<void> setTabOrder(List<int> value) async {
     state = state.copyWith(tabOrder: value);
     await _prefs.setString(_kTabOrder, value.join(','));
@@ -138,6 +173,12 @@ class SettingsNotifier extends Notifier<AppSettings> {
       lastVideoPath: state.lastVideoPath,
       tabOrder: null,
       deleteAfterDecode: state.deleteAfterDecode,
+      playerVolume: state.playerVolume,
+      windowX: state.windowX,
+      windowY: state.windowY,
+      windowWidth: state.windowWidth,
+      windowHeight: state.windowHeight,
+      windowMaximized: state.windowMaximized,
     );
   }
 

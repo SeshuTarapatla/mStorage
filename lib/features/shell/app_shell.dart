@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import '../../core/providers/player_request_provider.dart';
 import '../../core/services/gh_auth_service.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -42,21 +44,27 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin
+    implements WindowListener {
   late final AnimationController _ctrl;
   late final Animation<double> _enterFade;
   late final Animation<Offset> _enterSlide;
   late final Animation<double> _exitFade;
 
   AppTab? _exitingTab;
+  bool _isMaximized = false;
+  Timer? _boundsSaveTimer;
 
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
+    _initWindowState();
+
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 280),
-    )..value = 1.0; // start complete so first render is instant
+    )..value = 1.0;
 
     final curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _enterFade  = curved;
@@ -73,11 +81,78 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
+  Future<void> _initWindowState() async {
+    _isMaximized = await windowManager.isMaximized();
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    windowManager.removeListener(this);
+    _boundsSaveTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
+
+  // ── WindowListener ─────────────────────────────────────────────────────
+
+  @override
+  void onWindowMaximize() {
+    setState(() => _isMaximized = true);
+    ref.read(settingsProvider.notifier).setWindowMaximized(true);
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    setState(() => _isMaximized = false);
+    ref.read(settingsProvider.notifier).setWindowMaximized(false);
+  }
+
+  @override
+  void onWindowResize() => _scheduleBoundsSave();
+
+  @override
+  void onWindowMove() => _scheduleBoundsSave();
+
+  // Also handle the "resized" / "moved" final events if available
+  @override
+  void onWindowResized() => _scheduleBoundsSave();
+
+  @override
+  void onWindowMoved() => _scheduleBoundsSave();
+
+  void _scheduleBoundsSave() {
+    _boundsSaveTimer?.cancel();
+    _boundsSaveTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted || _isMaximized) return;
+      try {
+        final bounds = await windowManager.getBounds();
+        if (mounted && !_isMaximized) {
+          ref.read(settingsProvider.notifier).setWindowBounds(
+            x: bounds.left,
+            y: bounds.top,
+            width: bounds.width,
+            height: bounds.height,
+          );
+        }
+      } catch (_) {}
+    });
+  }
+
+  // ── WindowListener no-ops ───────────────────────────────────────────────
+
+  @override void onWindowEvent(String eventName) {}
+  @override void onWindowFocus() {}
+  @override void onWindowBlur() {}
+  @override void onWindowMinimize() {}
+  @override void onWindowRestore() {}
+  @override void onWindowEnterFullScreen() {}
+  @override void onWindowLeaveFullScreen() {}
+  @override void onWindowClose() {}
+  @override void onWindowDocked() {}
+  @override void onWindowUndocked() {}
+
+  // ── Dialog & styles ─────────────────────────────────────────────────────
 
   void _showUpdateDialog(BuildContext context, UpdateInfo info, TabPalette palette) {
     showDialog(
@@ -187,12 +262,12 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final activeTab = ref.watch(activeTabProvider);
+    final isFullscreen = ref.watch(playerFullscreenProvider);
     final subPalette = ref.watch(catalogSubPaletteProvider);
     final palette = (activeTab == AppTab.catalog && subPalette != null)
         ? subPalette
         : activeTab.palette;
 
-    // Trigger animation whenever the active tab changes.
     ref.listen(activeTabProvider, (prev, next) {
       if (prev != null && prev != next) {
         setState(() => _exitingTab = prev);
@@ -200,7 +275,6 @@ class _AppShellState extends ConsumerState<AppShell>
       }
     });
 
-    // Show update dialog every time a new version is detected on app start.
     ref.listen(updateProvider, (prev, next) {
       if (prev?.status != UpdateStatus.available &&
           next.status == UpdateStatus.available) {
@@ -217,11 +291,17 @@ class _AppShellState extends ConsumerState<AppShell>
         backgroundColor: kBgColor,
         body: Column(
           children: [
-            _TitleBar(activeTab: activeTab, palette: palette),
+            if (!isFullscreen)
+              _TitleBar(
+                activeTab: activeTab,
+                palette: palette,
+                isMaximized: _isMaximized,
+              ),
             Expanded(
               child: Row(
                 children: [
-                  _Sidebar(activeTab: activeTab, palette: palette),
+                  if (!isFullscreen)
+                    _Sidebar(activeTab: activeTab, palette: palette),
                   Expanded(
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
@@ -232,8 +312,6 @@ class _AppShellState extends ConsumerState<AppShell>
                           final isActive  = tab == activeTab;
                           final isExiting = tab == _exitingTab;
 
-                          // Tabs not involved in this transition stay in the
-                          // tree (state preserved) but are invisible.
                           if (!isActive && !isExiting) {
                             return IgnorePointer(
                               child: Opacity(
@@ -243,7 +321,6 @@ class _AppShellState extends ConsumerState<AppShell>
                             );
                           }
 
-                          // Entering tab — fades in and slides up.
                           if (isActive) {
                             return AnimatedBuilder(
                               animation: _ctrl,
@@ -258,7 +335,6 @@ class _AppShellState extends ConsumerState<AppShell>
                             );
                           }
 
-                          // Exiting tab — fades out behind the entering tab.
                           return IgnorePointer(
                             child: AnimatedBuilder(
                               animation: _ctrl,
@@ -286,13 +362,25 @@ class _AppShellState extends ConsumerState<AppShell>
 class _TitleBar extends ConsumerWidget {
   final AppTab activeTab;
   final TabPalette palette;
+  final bool isMaximized;
 
-  const _TitleBar({required this.activeTab, required this.palette});
+  const _TitleBar({
+    required this.activeTab,
+    required this.palette,
+    required this.isMaximized,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onPanStart: (_) => windowManager.startDragging(),
+      onDoubleTap: () async {
+        if (isMaximized) {
+          await windowManager.unmaximize();
+        } else {
+          await windowManager.maximize();
+        }
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         height: 48,
@@ -341,13 +429,15 @@ class _TitleBar extends ConsumerWidget {
               onTap: () => windowManager.minimize(),
             ),
             _WindowButton(
-              icon: Icons.crop_square_rounded,
-              tooltip: 'Maximize',
+              icon: isMaximized
+                  ? Icons.filter_none_rounded
+                  : Icons.crop_square_rounded,
+              tooltip: isMaximized ? 'Restore' : 'Maximize',
               onTap: () async {
-                if (await windowManager.isMaximized()) {
-                  windowManager.unmaximize();
+                if (isMaximized) {
+                  await windowManager.unmaximize();
                 } else {
-                  windowManager.maximize();
+                  await windowManager.maximize();
                 }
               },
             ),
@@ -460,7 +550,6 @@ class _SidebarState extends ConsumerState<_Sidebar> {
           .map((i) => _baseItems.firstWhere((item) => item.$1.index == i))
           .toList();
     } else if (settings.startupTab != 0) {
-      // User explicitly picked a startup tab — honor it.
       final startupTab =
           AppTab.values[settings.startupTab.clamp(0, AppTab.settings.index)];
       base = [
@@ -468,8 +557,6 @@ class _SidebarState extends ConsumerState<_Sidebar> {
         ..._baseItems.where((i) => i.$1 != startupTab),
       ];
     } else {
-      // Both tabOrder and startupTab are at defaults (reset state).
-      // Use URL-aware ordering: if sheet URL is configured, surface Catalog first.
       final sheetUrl = ref.watch(sheetUrlProvider);
       if (sheetUrl != null) {
         base = [
