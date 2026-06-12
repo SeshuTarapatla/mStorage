@@ -66,8 +66,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _showLogs = false;
   StreamSubscription<String>? _stdoutSub;
   StreamSubscription<String>? _stderrSub;
+  StreamSubscription<bool>? _playingSub;
 
-  // v1.4.1 additions
   List<String> _availableSubtitles = [];
   String? _activeSubtitle;
 
@@ -86,6 +86,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _initVolume();
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
 
+    // Mirror playing state into a provider so the sidebar dot can react.
+    _playingSub = _sharedPlayer.stream.playing.listen((playing) {
+      if (mounted) ref.read(playerPlayingProvider.notifier).state = playing;
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final path = ref.read(playerOpenRequestProvider);
@@ -99,6 +104,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    _playingSub?.cancel();
+    ref.read(playerPlayingProvider.notifier).state = false;
     _player.stop();
     _usernameCtrl.dispose();
     _roomCtrl.dispose();
@@ -369,6 +376,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (path != null && ref.read(activeTabProvider) == AppTab.player) {
         ref.read(playerOpenRequestProvider.notifier).state = null;
         _openVideo(path);
+      }
+    });
+
+    // Pause automatically when leaving the Player tab.
+    ref.listen<AppTab>(activeTabProvider, (prev, next) {
+      if (prev == AppTab.player && next != AppTab.player) {
+        _player.pause();
       }
     });
 

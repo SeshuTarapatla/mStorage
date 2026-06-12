@@ -7,3 +7,6 @@ final playerOpenRequestProvider = StateProvider<String?>((ref) => null);
 /// True while the player is in fullscreen mode.
 /// AppShell hides the title bar and sidebar while this is true.
 final playerFullscreenProvider = StateProvider<bool>((ref) => false);
+
+/// Mirrors _sharedPlayer.state.playing so the sidebar can show a playing dot.
+final playerPlayingProvider = StateProvider<bool>((ref) => false);

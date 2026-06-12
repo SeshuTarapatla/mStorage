@@ -100,9 +100,12 @@ class DecodeNotifier extends Notifier<DecodeState> {
       if (_cancelled) return;
 
       if (exitCode != 0) {
+        final errText = stderr.toString();
+        final isWrongPassword = errText.contains('Wrong password') ||
+            errText.contains('CRC Failed');
         state = state.copyWith(
           step: DecodeStep.error,
-          errorMessage: 'Extraction failed: ${stderr.toString()}',
+          errorMessage: isWrongPassword ? 'wrong_password' : 'Extraction failed: $errText',
         );
         return;
       }

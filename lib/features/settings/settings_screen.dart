@@ -306,27 +306,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         AppTab.admin    => (Icons.admin_panel_settings_rounded, 'Admin'),
       };
 
-  static int _effectiveStartupTab(AppSettings settings, String? sheetUrl) {
-    if (settings.startupTab != 0) return settings.startupTab;
-    return sheetUrl != null ? AppTab.catalog.index : AppTab.encode.index;
-  }
-
   static List<int> _effectiveOrder(AppSettings settings, String? sheetUrl) {
     if (settings.tabOrder != null) return settings.tabOrder!;
-    const defaultOrder = [
-      AppTab.encode,
-      AppTab.decode,
-      AppTab.player,
-      AppTab.catalog,
-      AppTab.settings,
-    ];
-    if (settings.startupTab != 0) {
-      final startupIdx = settings.startupTab.clamp(0, AppTab.settings.index);
-      return [
-        startupIdx,
-        ...defaultOrder.map((t) => t.index).where((i) => i != startupIdx),
-      ];
-    }
     if (sheetUrl != null) {
       return [
         AppTab.catalog.index,
@@ -336,7 +317,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         AppTab.settings.index,
       ];
     }
-    return defaultOrder.map((t) => t.index).toList();
+    return [
+      AppTab.encode.index,
+      AppTab.decode.index,
+      AppTab.player.index,
+      AppTab.catalog.index,
+      AppTab.settings.index,
+    ];
   }
 
   Widget _buildLayoutSection(AppSettings settings, Color accent, String? sheetUrl) {
@@ -369,11 +356,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _ActionButton(
                   label: 'Reset',
                   accent: accent,
-                  onTap: () async {
-                    final n = ref.read(settingsProvider.notifier);
-                    await n.resetTabOrder();
-                    await n.setStartupTab(0);
-                  },
+                  onTap: () => ref.read(settingsProvider.notifier).resetTabOrder(),
                 ),
             ],
           ),
@@ -474,24 +457,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final sheetUrl = ref.watch(sheetUrlProvider);
     final accent = _palette.primary;
     final updateState = ref.watch(updateProvider);
-    final updatePending = updateState.status == UpdateStatus.available ||
-        updateState.status == UpdateStatus.downloading ||
-        updateState.status == UpdateStatus.readyToInstall;
-
-    final updatesGroup = _SettingsGroup(
-      label: 'Updates',
-      accent: accent,
-      children: [
-        _SettingRow(
-          icon: Icons.system_update_rounded,
-          title: 'Check for Updates',
-          subtitle: '',
-          subtitleWidget: _buildUpdateSubtitle(updateState, accent),
-          accent: accent,
-          control: _buildUpdateControl(updateState),
-        ),
-      ],
-    ).animate().fadeIn(duration: 300.ms, delay: 40.ms);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
@@ -506,50 +471,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 32),
 
-          if (updatePending) ...[
-            updatesGroup,
-            const SizedBox(height: 20),
-          ],
-
-          // ── General ──────────────────────────────────────────────────────
+          // ── Updates ──────────────────────────────────────────────────────
           _SettingsGroup(
-            label: 'General',
+            label: 'Updates',
             accent: accent,
             children: [
               _SettingRow(
-                icon: Icons.home_rounded,
-                title: 'Startup Page',
-                subtitle: 'Which tab opens when the app launches.',
+                icon: Icons.system_update_rounded,
+                title: 'Check for Updates',
+                subtitle: '',
+                subtitleWidget: _buildUpdateSubtitle(updateState, accent),
                 accent: accent,
-                control: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final tab in [AppTab.encode, AppTab.decode, AppTab.player, AppTab.catalog])
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: _ChipButton(
-                          label: tab.name[0].toUpperCase() + tab.name.substring(1),
-                          selected: _effectiveStartupTab(settings, sheetUrl) == tab.index,
-                          accent: accent,
-                          onTap: () => ref
-                              .read(settingsProvider.notifier)
-                              .setStartupTab(tab.index),
-                        ),
-                      ),
-                  ],
-                ),
+                control: _buildUpdateControl(updateState),
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 40.ms),
-
-          const SizedBox(height: 20),
-
-          // ── Layout ───────────────────────────────────────────────────────
-          _SettingsGroup(
-            label: 'Layout',
-            accent: accent,
-            children: [_buildLayoutSection(settings, accent, sheetUrl)],
-          ).animate().fadeIn(duration: 300.ms, delay: 60.ms),
 
           const SizedBox(height: 20),
 
@@ -606,6 +542,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 60.ms),
+
+          const SizedBox(height: 20),
+
+          // ── Layout ───────────────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Layout',
+            accent: accent,
+            children: [_buildLayoutSection(settings, accent, sheetUrl)],
+          ).animate().fadeIn(duration: 300.ms, delay: 80.ms),
 
           const SizedBox(height: 20),
 
@@ -758,12 +703,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ).animate().fadeIn(duration: 300.ms, delay: 200.ms),
 
           const SizedBox(height: 20),
-
-          if (!updatePending) ...[
-            // ── Updates ────────────────────────────────────────────────────
-            updatesGroup,
-            const SizedBox(height: 20),
-          ],
 
           // ── Cache ─────────────────────────────────────────────────────────
           _SettingsGroup(
