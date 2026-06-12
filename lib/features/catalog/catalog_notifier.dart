@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show TimeoutException, unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
@@ -224,7 +224,8 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
 
     // No cache — fetch fresh (show loading until done).
     try {
-      final response = await http.get(Uri.parse(csvUrl));
+      final response = await http.get(Uri.parse(csvUrl))
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200 ||
           response.body.trimLeft().startsWith('<')) {
@@ -239,6 +240,10 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
       unawaited(_saveCsvCache(sheetId, response.body));
       final entries = await _buildEntries(response.body);
       if (mounted) state = CatalogLoaded(entries);
+    } on TimeoutException {
+      if (mounted) {
+        state = CatalogError('Request timed out — check your connection and try again.');
+      }
     } catch (e) {
       if (mounted) state = CatalogError('Failed to fetch catalog: $e');
     }
@@ -248,7 +253,8 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
   Future<void> _silentRefresh(
       String sheetId, String csvUrl, String cachedBody) async {
     try {
-      final response = await http.get(Uri.parse(csvUrl));
+      final response = await http.get(Uri.parse(csvUrl))
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode != 200 ||
           response.body.trimLeft().startsWith('<')) { return; }
       if (response.body == cachedBody) {

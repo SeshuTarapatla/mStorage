@@ -22,13 +22,13 @@ import '../catalog/catalog_notifier.dart';
 import '../catalog/series_notifier.dart' show catalogSubPaletteProvider;
 import '../settings/settings_screen.dart';
 
-// Reads startupTab from already-loaded settings (main() loads before runApp).
+// Startup tab = first item in the effective page order.
 // ref.read (not watch) so user navigation doesn't get overridden on rebuilds.
 final activeTabProvider = StateProvider<AppTab>((ref) {
   final settings = ref.read(settingsProvider);
-  final idx = settings.startupTab;
-  if (idx != 0) return AppTab.values[idx.clamp(0, AppTab.settings.index)];
-  // At default (0): open Catalog if sheet URL is configured, otherwise Encode.
+  if (settings.tabOrder != null && settings.tabOrder!.isNotEmpty) {
+    return AppTab.values[settings.tabOrder!.first.clamp(0, AppTab.settings.index)];
+  }
   final sheetUrl = ref.read(sheetUrlProvider);
   return sheetUrl != null ? AppTab.catalog : AppTab.encode;
 });
@@ -53,7 +53,6 @@ class _AppShellState extends ConsumerState<AppShell>
 
   AppTab? _exitingTab;
   bool _isMaximized = false;
-  Timer? _boundsSaveTimer;
 
   @override
   void initState() {
@@ -89,7 +88,6 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void dispose() {
     windowManager.removeListener(this);
-    _boundsSaveTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -97,50 +95,17 @@ class _AppShellState extends ConsumerState<AppShell>
   // ── WindowListener ─────────────────────────────────────────────────────
 
   @override
-  void onWindowMaximize() {
-    setState(() => _isMaximized = true);
-    ref.read(settingsProvider.notifier).setWindowMaximized(true);
-  }
+  void onWindowMaximize() => setState(() => _isMaximized = true);
 
   @override
-  void onWindowUnmaximize() {
-    setState(() => _isMaximized = false);
-    ref.read(settingsProvider.notifier).setWindowMaximized(false);
-  }
-
-  @override
-  void onWindowResize() => _scheduleBoundsSave();
-
-  @override
-  void onWindowMove() => _scheduleBoundsSave();
-
-  // Also handle the "resized" / "moved" final events if available
-  @override
-  void onWindowResized() => _scheduleBoundsSave();
-
-  @override
-  void onWindowMoved() => _scheduleBoundsSave();
-
-  void _scheduleBoundsSave() {
-    _boundsSaveTimer?.cancel();
-    _boundsSaveTimer = Timer(const Duration(milliseconds: 500), () async {
-      if (!mounted || _isMaximized) return;
-      try {
-        final bounds = await windowManager.getBounds();
-        if (mounted && !_isMaximized) {
-          ref.read(settingsProvider.notifier).setWindowBounds(
-            x: bounds.left,
-            y: bounds.top,
-            width: bounds.width,
-            height: bounds.height,
-          );
-        }
-      } catch (_) {}
-    });
-  }
+  void onWindowUnmaximize() => setState(() => _isMaximized = false);
 
   // ── WindowListener no-ops ───────────────────────────────────────────────
 
+  @override void onWindowResize() {}
+  @override void onWindowResized() {}
+  @override void onWindowMove() {}
+  @override void onWindowMoved() {}
   @override void onWindowEvent(String eventName) {}
   @override void onWindowFocus() {}
   @override void onWindowBlur() {}
@@ -313,11 +278,16 @@ class _AppShellState extends ConsumerState<AppShell>
                           final isExiting = tab == _exitingTab;
 
                           if (!isActive && !isExiting) {
-                            return IgnorePointer(
-                              child: Opacity(
-                                opacity: 0,
-                                child: _screenFor(tab),
-                              ),
+                            // Player keeps tickers so audio continues off-tab;
+                            // all other tabs are fully frozen.
+                            return Offstage(
+                              offstage: true,
+                              child: tab == AppTab.player
+                                  ? _screenFor(tab)
+                                  : TickerMode(
+                                      enabled: false,
+                                      child: _screenFor(tab),
+                                    ),
                             );
                           }
 
@@ -539,6 +509,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
   Widget build(BuildContext context) {
     final encodeRunning = ref.watch(encodeProvider).isRunning;
     final decodeRunning = ref.watch(decodeProvider).isRunning;
+    final playerPlaying = ref.watch(playerPlayingProvider);
     final isAdmin = ref.watch(ghAuthProvider).valueOrNull ?? false;
     final updateStatus = ref.watch(updateProvider).status;
 
@@ -549,13 +520,6 @@ class _SidebarState extends ConsumerState<_Sidebar> {
           .where((i) => i <= AppTab.settings.index)
           .map((i) => _baseItems.firstWhere((item) => item.$1.index == i))
           .toList();
-    } else if (settings.startupTab != 0) {
-      final startupTab =
-          AppTab.values[settings.startupTab.clamp(0, AppTab.settings.index)];
-      base = [
-        ..._baseItems.where((i) => i.$1 == startupTab),
-        ..._baseItems.where((i) => i.$1 != startupTab),
-      ];
     } else {
       final sheetUrl = ref.watch(sheetUrlProvider);
       if (sheetUrl != null) {
@@ -590,7 +554,8 @@ class _SidebarState extends ConsumerState<_Sidebar> {
               isActive: widget.activeTab == item.$1,
               isHovered: _hovered == item.$1,
               isRunning: (item.$1 == AppTab.encode && encodeRunning) ||
-                  (item.$1 == AppTab.decode && decodeRunning),
+                  (item.$1 == AppTab.decode && decodeRunning) ||
+                  (item.$1 == AppTab.player && playerPlaying),
               hasBadge: item.$1 == AppTab.settings &&
                   (updateStatus == UpdateStatus.available ||
                    updateStatus == UpdateStatus.downloading ||

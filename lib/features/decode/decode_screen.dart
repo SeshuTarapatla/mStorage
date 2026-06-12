@@ -213,7 +213,15 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
                   .fadeIn(),
 
             if (state.step == DecodeStep.error)
-              ErrorBanner(message: state.errorMessage ?? 'Unknown error')
+              (state.errorMessage == 'wrong_password'
+                  ? PasswordWarningBanner(
+                      accentColor: accent,
+                      message: 'Incorrect password — the file could not be decrypted.',
+                      onGoToSettings: () => ref
+                          .read(activeTabProvider.notifier)
+                          .state = AppTab.settings,
+                    )
+                  : ErrorBanner(message: state.errorMessage ?? 'Unknown error'))
                   .animate()
                   .fadeIn()
                   .shakeX(),
