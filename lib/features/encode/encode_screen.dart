@@ -191,6 +191,28 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
         ? AppDirectories.encoded
         : settings.encodeOutputDirectory;
 
+    final outputFile = File(p.join(outDir, '$title.mp4'));
+    if (outputFile.existsSync()) {
+      final overwrite = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('File already exists'),
+          content: Text('"$title.mp4" already exists in the output folder. Overwrite?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Overwrite'),
+            ),
+          ],
+        ),
+      );
+      if (overwrite != true) return;
+    }
+
     await ref.read(encodeProvider.notifier).run(
           EncodeConfig(
             videoPath: _videoPath!,
@@ -237,6 +259,17 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
                         color: accent,
                       ),
                     ),
+                    if (encodeState.isRunning)
+                      TextButton.icon(
+                        onPressed: () =>
+                            ref.read(encodeProvider.notifier).cancel(),
+                        icon: const Icon(Icons.cancel_rounded, size: 16),
+                        label: const Text('Cancel'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: kTextMuted,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                      ).animate().fadeIn(duration: 200.ms),
                     if (anyFieldSet && encodeState.step == EncodeStep.idle)
                       TextButton.icon(
                         onPressed: _clearAll,

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -46,9 +47,10 @@ class ArchiveService {
     return t;
   }
 
-  static int _crc32Update(int crc, List<int> data) {
+  static int _crc32Update(int crc, Uint8List data) {
+    final table = _crcTable;
     for (final b in data) {
-      crc = _crcTable[(crc ^ b) & 0xFF] ^ (crc >> 8);
+      crc = table[(crc ^ b) & 0xFF] ^ (crc >> 8);
     }
     return crc;
   }
@@ -69,33 +71,39 @@ class ArchiveService {
   /// When [password] is set, delegates to 7za for AES-256 encryption via stdin
   /// (avoids copying large video files). Falls back to the pure Dart STORE
   /// writer when no password is required.
+  ///
+  /// Unencrypted: runs in a background isolate; progress is polled externally
+  /// via the output file size. [onProgress] is only called with 1.0 on completion.
+  /// Encrypted: [onProgress] fires per 0.5 % of bytes piped to 7za.
   static Future<void> createZip({
     required List<(String, String)> fileEntries,
     required String outputPath,
     String password = '',
     void Function(double)? onProgress,
+    void Function(Process)? onProcessStarted,
   }) async {
     if (password.isNotEmpty) {
-      await _createEncryptedZip(fileEntries, outputPath, password, onProgress);
+      await _createEncryptedZip(
+        fileEntries, outputPath, password, onProgress,
+        onProcessStarted: onProcessStarted,
+      );
       return;
     }
-    // No password — use fast streaming Dart writer.
+    await Isolate.run(() => _doCreateZip(fileEntries, outputPath));
+    onProgress?.call(1.0);
+  }
 
-    int totalBytes = 0;
-    for (final (path, _) in fileEntries) {
-      try {
-        totalBytes += await File(path).length();
-      } catch (_) {}
-    }
-
-    final out = File(outputPath).openWrite();
+  /// Pure-sync ZIP STORE writer — runs inside a background isolate.
+  static void _doCreateZip(
+    List<(String, String)> fileEntries,
+    String outputPath,
+  ) {
+    final outFile = File(outputPath).openSync(mode: FileMode.write);
     int offset = 0;
-    int bytesWritten = 0;
-    double lastReported = -1.0;
     final cdRecords = <List<int>>[];
 
     void w(List<int> bytes) {
-      out.add(bytes);
+      outFile.writeFromSync(bytes);
       offset += bytes.length;
     }
 
@@ -105,63 +113,62 @@ class ArchiveService {
         final localOffset = offset;
 
         // Local file header (30 bytes + filename)
-        w([0x50, 0x4B, 0x03, 0x04]);   // LFH signature
-        w(_u16(20));                     // version needed: 2.0
-        w(_u16(0x0808));                 // flags: bit3=data-descriptor, bit11=UTF-8
-        w(_u16(0));                      // compression: STORE
-        w(_u16(0));                      // mod time
-        w(_u16(0));                      // mod date
-        w(_u32(0));                      // CRC-32 (deferred via data descriptor)
-        w(_u32(0));                      // compressed size (deferred)
-        w(_u32(0));                      // uncompressed size (deferred)
-        w(_u16(nameBytes.length));       // filename length
-        w(_u16(0));                      // extra field length
-        w(nameBytes);                    // filename
+        w([0x50, 0x4B, 0x03, 0x04]);
+        w(_u16(20));
+        w(_u16(0x0808));
+        w(_u16(0));
+        w(_u16(0));
+        w(_u16(0));
+        w(_u32(0));
+        w(_u32(0));
+        w(_u32(0));
+        w(_u16(nameBytes.length));
+        w(_u16(0));
+        w(nameBytes);
 
         // Stream file data, computing CRC-32 incrementally
+        final inFile = File(sourcePath).openSync();
         int crc = 0xFFFFFFFF;
         int fileSize = 0;
-        await for (final chunk in File(sourcePath).openRead()) {
-          w(chunk);
-          crc = _crc32Update(crc, chunk);
-          fileSize += chunk.length;
-          bytesWritten += chunk.length;
-          if (onProgress != null && totalBytes > 0) {
-            final frac = (bytesWritten / totalBytes).clamp(0.0, 0.99);
-            if (frac - lastReported >= 0.005) {
-              lastReported = frac;
-              onProgress(frac);
-            }
+        try {
+          while (true) {
+            final block = inFile.readSync(65536);
+            if (block.isEmpty) break;
+            w(block);
+            crc = _crc32Update(crc, block);
+            fileSize += block.length;
           }
+        } finally {
+          inFile.closeSync();
         }
         final finalCrc = (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
 
-        // Data descriptor (sig + CRC + compressed size + uncompressed size)
-        w([0x50, 0x4B, 0x07, 0x08]);   // DD signature
+        // Data descriptor
+        w([0x50, 0x4B, 0x07, 0x08]);
         w(_u32(finalCrc));
         w(_u32(fileSize));
-        w(_u32(fileSize));              // compressed == uncompressed for STORE
+        w(_u32(fileSize));
 
-        // Central directory record for this file
+        // Central directory record
         final cd = <int>[];
         void cw(List<int> b) => cd.addAll(b);
-        cw([0x50, 0x4B, 0x01, 0x02]);  // CDR signature
-        cw(_u16(20));                    // version made by
-        cw(_u16(20));                    // version needed
-        cw(_u16(0x0808));                // flags (match LFH)
-        cw(_u16(0));                     // compression: STORE
-        cw(_u16(0));                     // mod time
-        cw(_u16(0));                     // mod date
+        cw([0x50, 0x4B, 0x01, 0x02]);
+        cw(_u16(20));
+        cw(_u16(20));
+        cw(_u16(0x0808));
+        cw(_u16(0));
+        cw(_u16(0));
+        cw(_u16(0));
         cw(_u32(finalCrc));
-        cw(_u32(fileSize));              // compressed size
-        cw(_u32(fileSize));              // uncompressed size
-        cw(_u16(nameBytes.length));      // filename length
-        cw(_u16(0));                     // extra field length
-        cw(_u16(0));                     // comment length
-        cw(_u16(0));                     // disk number start
-        cw(_u16(0));                     // internal file attributes
-        cw(_u32(0));                     // external file attributes
-        cw(_u32(localOffset));           // offset of local header
+        cw(_u32(fileSize));
+        cw(_u32(fileSize));
+        cw(_u16(nameBytes.length));
+        cw(_u16(0));
+        cw(_u16(0));
+        cw(_u16(0));
+        cw(_u16(0));
+        cw(_u32(0));
+        cw(_u32(localOffset));
         cw(nameBytes);
         cdRecords.add(cd);
       }
@@ -174,19 +181,16 @@ class ArchiveService {
       final cdSize = offset - cdOffset;
 
       // End of central directory record
-      w([0x50, 0x4B, 0x05, 0x06]);     // EOCD signature
-      w(_u16(0));                        // disk number
-      w(_u16(0));                        // disk with CD start
-      w(_u16(cdRecords.length));         // entries on this disk
-      w(_u16(cdRecords.length));         // total entries
-      w(_u32(cdSize));                   // CD size
-      w(_u32(cdOffset));                 // CD offset
-      w(_u16(0));                        // comment length
-
-      await out.flush();
-      onProgress?.call(1.0);
+      w([0x50, 0x4B, 0x05, 0x06]);
+      w(_u16(0));
+      w(_u16(0));
+      w(_u16(cdRecords.length));
+      w(_u16(cdRecords.length));
+      w(_u32(cdSize));
+      w(_u32(cdOffset));
+      w(_u16(0));
     } finally {
-      await out.close();
+      outFile.closeSync();
     }
   }
 
@@ -196,8 +200,9 @@ class ArchiveService {
     List<(String, String)> fileEntries,
     String outputPath,
     String password,
-    void Function(double)? onProgress,
-  ) async {
+    void Function(double)? onProgress, {
+    void Function(Process)? onProcessStarted,
+  }) async {
     final sevenZ = await sevenZipPath;
     int totalBytes = 0;
     for (final (path, _) in fileEntries) {
@@ -206,18 +211,29 @@ class ArchiveService {
       } catch (_) {}
     }
     int processed = 0;
+    double lastFrac = 0.0;
+
     for (final (sourcePath, archiveName) in fileEntries) {
       final process = await Process.start(sevenZ, [
         'a', '-tzip', '-p$password', '-mem=AES256', outputPath, '-si$archiveName',
       ]);
-      await for (final chunk in File(sourcePath).openRead()) {
-        process.stdin.add(chunk);
+      onProcessStarted?.call(process);
+
+      // addStream provides natural backpressure; map() throttles progress calls.
+      final countingStream = File(sourcePath).openRead().map((chunk) {
         processed += chunk.length;
         if (onProgress != null && totalBytes > 0) {
-          onProgress((processed / totalBytes).clamp(0.0, 0.99));
+          final frac = (processed / totalBytes).clamp(0.0, 0.99);
+          if (frac - lastFrac >= 0.005) {
+            lastFrac = frac;
+            onProgress(frac);
+          }
         }
-      }
+        return chunk;
+      });
+      await process.stdin.addStream(countingStream);
       await process.stdin.close();
+
       final exitCode = await process.exitCode;
       if (exitCode != 0) {
         final err = await process.stderr.transform(utf8.decoder).join();

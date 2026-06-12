@@ -19,6 +19,39 @@ class FfmpegService {
     return dest;
   }
 
+  /// Starts mask video generation and returns the [Process] handle so the
+  /// caller can cancel it. Collect stderr and await [Process.exitCode] yourself.
+  static Future<Process> startMaskGeneration({
+    required String posterPath,
+    required String outputPath,
+    required String date,
+    required String time,
+    int durationSeconds = 5,
+    bool preserveAspectRatio = true,
+    int targetWidth = 1920,
+    int targetHeight = 1080,
+  }) async {
+    final ffmpeg = await binaryPath;
+    final creationTime = '${date}T$time';
+    final w = targetWidth;
+    final h = targetHeight;
+    final scaleFilter = preserveAspectRatio
+        ? 'scale=$w:$h:force_original_aspect_ratio=decrease,pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black'
+        : 'scale=$w:$h';
+    final args = [
+      '-y',
+      '-loop', '1',
+      '-i', posterPath,
+      '-c:v', 'libx264',
+      '-t', '$durationSeconds',
+      '-pix_fmt', 'yuv420p',
+      '-vf', scaleFilter,
+      '-metadata', 'creation_time=$creationTime',
+      outputPath,
+    ];
+    return Process.start(ffmpeg, args);
+  }
+
   /// Builds a mask video from [posterPath].
   /// [targetWidth]x[targetHeight] is auto-detected from poster orientation by
   /// the caller. [preserveAspectRatio] letterboxes; false stretches to fill.

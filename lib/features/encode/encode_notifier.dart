@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,15 +48,21 @@ class EncodeState {
 }
 
 class EncodeNotifier extends Notifier<EncodeState> {
+  Process? _ffmpegProcess;
+  Process? _zipProcess;
+  bool _cancelled = false;
+
   @override
   EncodeState build() => const EncodeState();
 
   Future<void> run(EncodeConfig config) async {
+    _cancelled = false;
     state = const EncodeState(step: EncodeStep.generatingMask);
 
     try {
       final tmpDir = await getTemporaryDirectory();
-      final cacheDir = Directory(p.join(tmpDir.path, 'mstorage_cache'));
+      final uid = DateTime.now().microsecondsSinceEpoch.toString();
+      final cacheDir = Directory(p.join(tmpDir.path, 'mstorage_cache', uid));
       await cacheDir.create(recursive: true);
 
       final maskPath = p.join(cacheDir.path, 'mask.mp4');
@@ -95,7 +102,7 @@ class EncodeNotifier extends Notifier<EncodeState> {
         }
       }
 
-      final maskResult = await FfmpegService.generateMaskVideo(
+      final ffmpegProcess = await FfmpegService.startMaskGeneration(
         posterPath: posterPath,
         outputPath: maskPath,
         date: config.date,
@@ -105,10 +112,17 @@ class EncodeNotifier extends Notifier<EncodeState> {
         targetWidth: targetWidth,
         targetHeight: targetHeight,
       );
-      if (maskResult.exitCode != 0 || !File(maskPath).existsSync()) {
+      _ffmpegProcess = ffmpegProcess;
+      final stderr = StringBuffer();
+      ffmpegProcess.stderr.transform(utf8.decoder).listen(stderr.write);
+      final ffmpegExit = await ffmpegProcess.exitCode;
+      _ffmpegProcess = null;
+
+      if (_cancelled) return;
+      if (ffmpegExit != 0 || !File(maskPath).existsSync()) {
         state = state.copyWith(
           step: EncodeStep.error,
-          errorMessage: 'ffmpeg failed: ${maskResult.stderr}',
+          errorMessage: 'ffmpeg failed: ${stderr.toString()}',
         );
         return;
       }
@@ -122,12 +136,43 @@ class EncodeNotifier extends Notifier<EncodeState> {
         if (config.posterPath != null && config.posterPath!.isNotEmpty)
           (config.posterPath!, '${config.title}${p.extension(config.posterPath!)}'),
       ];
-      await ArchiveService.createZip(
-        fileEntries: filesToArchive,
-        outputPath: archivePath,
-        password: config.password,
-        onProgress: (prog) => state = state.copyWith(compressProgress: prog),
-      );
+
+      // For unencrypted ZIP (runs in isolate), poll output file size for progress.
+      int totalInputBytes = 0;
+      if (config.password.isEmpty) {
+        for (final (path, _) in filesToArchive) {
+          try { totalInputBytes += File(path).lengthSync(); } catch (_) {}
+        }
+      }
+      Timer? zipPoll;
+      if (totalInputBytes > 0) {
+        zipPoll = Timer.periodic(const Duration(milliseconds: 250), (_) {
+          try {
+            final written = File(archivePath).lengthSync();
+            state = state.copyWith(
+              compressProgress: (written / totalInputBytes).clamp(0.0, 0.99),
+            );
+          } catch (_) {}
+        });
+      }
+      try {
+        await ArchiveService.createZip(
+          fileEntries: filesToArchive,
+          outputPath: archivePath,
+          password: config.password,
+          onProgress: config.password.isNotEmpty
+              ? (prog) => state = state.copyWith(compressProgress: prog)
+              : null,
+          onProcessStarted: config.password.isNotEmpty
+              ? (proc) => _zipProcess = proc
+              : null,
+        );
+      } finally {
+        zipPoll?.cancel();
+        _zipProcess = null;
+      }
+
+      if (_cancelled) return;
       if (!File(archivePath).existsSync()) {
         state = state.copyWith(
           step: EncodeStep.error,
@@ -167,16 +212,26 @@ class EncodeNotifier extends Notifier<EncodeState> {
         combinePoll?.cancel();
       }
 
-      // Cleanup cache
-      await cacheDir.delete(recursive: true);
+      // Cleanup own cache dir only
+      try { await cacheDir.delete(recursive: true); } catch (_) {}
 
       state = state.copyWith(step: EncodeStep.done, outputPath: outputPath);
     } catch (e) {
+      if (_cancelled) return;
       state = state.copyWith(
         step: EncodeStep.error,
         errorMessage: e.toString(),
       );
     }
+  }
+
+  void cancel() {
+    _cancelled = true;
+    _ffmpegProcess?.kill();
+    _ffmpegProcess = null;
+    _zipProcess?.kill();
+    _zipProcess = null;
+    state = const EncodeState();
   }
 
   void reset() => state = const EncodeState();

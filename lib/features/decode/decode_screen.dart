@@ -98,6 +98,7 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
     // Keep the history record so Downloads still shows the entry with a Play button.
     ref.listen<DecodeState>(decodeProvider, (previous, next) {
       if (previous?.step != DecodeStep.done && next.step == DecodeStep.done) {
+        if (!ref.read(settingsProvider).deleteAfterDecode) return;
         final path = _videoPath;
         if (path != null) {
           try {

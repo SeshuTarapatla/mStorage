@@ -27,6 +27,7 @@ const _kSyncplayRoom = 'syncplay_room';
 const _kStartupTab = 'startup_tab';
 const _kLastVideoPath = 'last_video_path';
 const _kTabOrder = 'tab_order';
+const _kDeleteAfterDecode = 'setting_delete_after_decode';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -52,6 +53,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
           ?.split(',')
           .map(int.parse)
           .toList(),
+      deleteAfterDecode: _prefs.getBool(_kDeleteAfterDecode) ?? false,
     );
   }
 
@@ -110,6 +112,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await _prefs.setInt(_kStartupTab, value);
   }
 
+  Future<void> setDeleteAfterDecode(bool value) async {
+    state = state.copyWith(deleteAfterDecode: value);
+    await _prefs.setBool(_kDeleteAfterDecode, value);
+  }
+
   Future<void> setTabOrder(List<int> value) async {
     state = state.copyWith(tabOrder: value);
     await _prefs.setString(_kTabOrder, value.join(','));
@@ -130,6 +137,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       startupTab: state.startupTab,
       lastVideoPath: state.lastVideoPath,
       tabOrder: null,
+      deleteAfterDecode: state.deleteAfterDecode,
     );
   }
 
