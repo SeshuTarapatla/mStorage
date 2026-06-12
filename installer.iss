@@ -7,7 +7,7 @@
 ; Output: installer\mStorage_Setup.exe
 
 #define AppName        "mStorage"
-#define AppVersion     "1.4.2"
+#define AppVersion     "1.4.3"
 #define AppPublisher   "Seshu Tarapatla"
 #define AppURL         "https://github.com/SeshuTarapatla/mStorage"
 #define AppExeName     "m_storage.exe"
