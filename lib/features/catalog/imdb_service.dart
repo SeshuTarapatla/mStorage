@@ -127,9 +127,14 @@ class ImdbService {
     }
 
     if (toFetch.isNotEmpty) {
+      // Split into batches of _batchSize, fetch up to 4 concurrently.
+      final batches = <List<String>>[];
       for (var i = 0; i < toFetch.length; i += _batchSize) {
-        final batch = toFetch.sublist(i, min(i + _batchSize, toFetch.length));
-        await _fetchBatch(batch, result);
+        batches.add(toFetch.sublist(i, min(i + _batchSize, toFetch.length)));
+      }
+      for (var i = 0; i < batches.length; i += 4) {
+        final window = batches.sublist(i, min(i + 4, batches.length));
+        await Future.wait(window.map((b) => _fetchBatch(b, result)));
       }
       await _persist();
     }

@@ -53,6 +53,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   AppTab? _exitingTab;
   bool _isMaximized = false;
+  final List<_ToastEntry> _toasts = [];
 
   @override
   void initState() {
@@ -85,10 +86,25 @@ class _AppShellState extends ConsumerState<AppShell>
     if (mounted) setState(() {});
   }
 
+  void _addToast(String message, TabPalette palette, AppTab target) {
+    final id = DateTime.now().microsecondsSinceEpoch;
+    final entry = _ToastEntry(
+      id: id,
+      message: message,
+      palette: palette,
+      target: target,
+      timer: Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _toasts.removeWhere((t) => t.id == id));
+      }),
+    );
+    if (mounted) setState(() => _toasts.add(entry));
+  }
+
   @override
   void dispose() {
     windowManager.removeListener(this);
     _ctrl.dispose();
+    for (final t in _toasts) { t.timer.cancel(); }
     super.dispose();
   }
 
@@ -249,79 +265,127 @@ class _AppShellState extends ConsumerState<AppShell>
       }
     });
 
+    ref.listen(encodeProvider, (prev, next) {
+      if (prev?.step != EncodeStep.done && next.step == EncodeStep.done) {
+        if (ref.read(activeTabProvider) != AppTab.encode) {
+          _addToast('Encode complete', AppTab.encode.palette, AppTab.encode);
+        }
+      }
+    });
+
+    ref.listen(decodeProvider, (prev, next) {
+      if (prev?.step != DecodeStep.done && next.step == DecodeStep.done) {
+        if (ref.read(activeTabProvider) != AppTab.decode) {
+          _addToast('Decode complete', AppTab.decode.palette, AppTab.decode);
+        }
+      }
+    });
+
+    ref.listen(downloadProvider, (prev, next) {
+      if (prev is! DownloadDone && next is DownloadDone) {
+        if (ref.read(activeTabProvider) != AppTab.catalog) {
+          _addToast('Download complete', AppTab.catalog.palette, AppTab.catalog);
+        }
+      }
+    });
+
     return AnimatedTheme(
       duration: const Duration(milliseconds: 300),
       data: Theme.of(context),
       child: Scaffold(
         backgroundColor: kBgColor,
-        body: Column(
+        body: Stack(
           children: [
-            if (!isFullscreen)
-              _TitleBar(
-                activeTab: activeTab,
-                palette: palette,
-                isMaximized: _isMaximized,
-              ),
-            Expanded(
-              child: Row(
-                children: [
-                  if (!isFullscreen)
-                    _Sidebar(activeTab: activeTab, palette: palette),
-                  Expanded(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      color: palette.surface,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: AppTab.values.map((tab) {
-                          final isActive  = tab == activeTab;
-                          final isExiting = tab == _exitingTab;
-
-                          if (!isActive && !isExiting) {
-                            // Player keeps tickers so audio continues off-tab;
-                            // all other tabs are fully frozen.
-                            return Offstage(
-                              offstage: true,
-                              child: tab == AppTab.player
-                                  ? _screenFor(tab)
-                                  : TickerMode(
-                                      enabled: false,
-                                      child: _screenFor(tab),
-                                    ),
-                            );
-                          }
-
-                          if (isActive) {
-                            return AnimatedBuilder(
-                              animation: _ctrl,
-                              builder: (_, child) => FadeTransition(
-                                opacity: _enterFade,
-                                child: SlideTransition(
-                                  position: _enterSlide,
-                                  child: child,
-                                ),
-                              ),
-                              child: _screenFor(tab),
-                            );
-                          }
-
-                          return IgnorePointer(
-                            child: AnimatedBuilder(
-                              animation: _ctrl,
-                              builder: (_, child) => FadeTransition(
-                                opacity: _exitFade,
-                                child: child,
-                              ),
-                              child: _screenFor(tab),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
+            Column(
+              children: [
+                if (!isFullscreen)
+                  _TitleBar(
+                    activeTab: activeTab,
+                    palette: palette,
+                    isMaximized: _isMaximized,
                   ),
-                ],
-              ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (!isFullscreen)
+                        _Sidebar(activeTab: activeTab, palette: palette),
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          color: palette.surface,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: AppTab.values.map((tab) {
+                              final isActive  = tab == activeTab;
+                              final isExiting = tab == _exitingTab;
+
+                              if (!isActive && !isExiting) {
+                                // Player keeps tickers so audio continues off-tab;
+                                // all other tabs are fully frozen.
+                                return Offstage(
+                                  offstage: true,
+                                  child: tab == AppTab.player
+                                      ? _screenFor(tab)
+                                      : TickerMode(
+                                          enabled: false,
+                                          child: _screenFor(tab),
+                                        ),
+                                );
+                              }
+
+                              if (isActive) {
+                                return AnimatedBuilder(
+                                  animation: _ctrl,
+                                  builder: (_, child) => FadeTransition(
+                                    opacity: _enterFade,
+                                    child: SlideTransition(
+                                      position: _enterSlide,
+                                      child: child,
+                                    ),
+                                  ),
+                                  child: _screenFor(tab),
+                                );
+                              }
+
+                              return IgnorePointer(
+                                child: AnimatedBuilder(
+                                  animation: _ctrl,
+                                  builder: (_, child) => FadeTransition(
+                                    opacity: _exitFade,
+                                    child: child,
+                                  ),
+                                  child: _screenFor(tab),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
+            if (_toasts.isNotEmpty)
+              Positioned(
+                top: 60,
+                right: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: _toasts.map((t) => _ToastCard(
+                    toast: t,
+                    onTap: () {
+                      t.timer.cancel();
+                      setState(() => _toasts.removeWhere((e) => e.id == t.id));
+                      ref.read(activeTabProvider.notifier).state = t.target;
+                    },
+                    onDismiss: () {
+                      t.timer.cancel();
+                      setState(() => _toasts.removeWhere((e) => e.id == t.id));
+                    },
+                  )).toList(),
+                ),
+              ),
           ],
         ),
       ),
@@ -693,5 +757,97 @@ class _SidebarItem extends StatelessWidget {
       ),
     ),
     );
+  }
+}
+
+// ── Toast data ──────────────────────────────────────────────────────────────
+
+class _ToastEntry {
+  final int id;
+  final String message;
+  final TabPalette palette;
+  final AppTab target;
+  final Timer timer;
+
+  const _ToastEntry({
+    required this.id,
+    required this.message,
+    required this.palette,
+    required this.target,
+    required this.timer,
+  });
+}
+
+// ── Toast card widget ───────────────────────────────────────────────────────
+
+class _ToastCard extends StatelessWidget {
+  final _ToastEntry toast;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  const _ToastCard({
+    required this.toast,
+    required this.onTap,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 240,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: kSurfaceColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: toast.palette.primary.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: toast.palette.primary.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.check_rounded,
+                      color: toast.palette.primary, size: 14),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    toast.message,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: kTextPrimary,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onDismiss,
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close_rounded, color: kTextMuted, size: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 180.ms).slideX(begin: 0.25, end: 0, duration: 180.ms);
   }
 }

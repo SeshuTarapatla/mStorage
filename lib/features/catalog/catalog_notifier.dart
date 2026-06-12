@@ -134,10 +134,10 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     } catch (_) {}
   }
 
-  // ── CSV → entries pipeline (shared by cached and fresh paths) ─────────────
+  // ── CSV → entries pipeline ─────────────────────────────────────────────────
 
-  Future<List<CatalogEntry>> _buildEntries(String csvBody) async {
-    // Normalize CRLF → LF so the parser works regardless of what Google returns.
+  /// Parses CSV into raw entries (no network). Fast — safe to call before showing UI.
+  List<CatalogEntry> _parseRaw(String csvBody) {
     final normalized = csvBody.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final rows = const CsvToListConverter(eol: '\n').convert(normalized);
     if (rows.length < 2) return [];
@@ -151,11 +151,10 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
             .replaceAll(RegExp(r'[\s_\-]+'), ''): i,
     };
 
-    // Index of the visibility column. Canonical name is 'show'; legacy aliases kept for backward compat.
     final visIdx = headers['show'] ?? headers['enabled'] ?? headers['visible'] ??
         headers['active'];
 
-    final rawEntries = rows
+    return rows
         .skip(1)
         .where((row) {
           if (row.isEmpty || row[0].toString().trim().isEmpty) return false;
@@ -167,8 +166,11 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
         })
         .map((row) => CatalogEntry.fromRow(row, headers))
         .toList();
+  }
 
-    final imdbIds = rawEntries
+  /// Merges IMDB metadata into [raw] entries. Makes network calls for uncached IDs.
+  Future<List<CatalogEntry>> _mergeImdb(List<CatalogEntry> raw) async {
+    final imdbIds = raw
         .where((e) => e.imdbId.isNotEmpty)
         .map((e) => e.imdbId)
         .toList();
@@ -177,7 +179,7 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
         ? await ImdbService().resolve(imdbIds)
         : <String, dynamic>{};
 
-    return rawEntries.map((e) {
+    return raw.map((e) {
       final data = imdbMap[e.imdbId];
       return data != null ? e.mergeImdb(data) : e;
     }).toList();
@@ -210,7 +212,10 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
       // Serve from disk cache immediately if available.
       final cached = await _loadCsvCache(sheetId);
       if (cached != null) {
-        final entries = await _buildEntries(cached.body);
+        // Show raw entries immediately, then merge IMDB (likely instant from cache).
+        final raw = _parseRaw(cached.body);
+        if (mounted) state = CatalogLoaded(raw);
+        final entries = await _mergeImdb(raw);
         if (mounted) state = CatalogLoaded(entries);
 
         final age = DateTime.now().difference(cached.fetchedAt);
@@ -238,7 +243,9 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
       }
 
       unawaited(_saveCsvCache(sheetId, response.body));
-      final entries = await _buildEntries(response.body);
+      final raw = _parseRaw(response.body);
+      if (mounted) state = CatalogLoaded(raw);
+      final entries = await _mergeImdb(raw);
       if (mounted) state = CatalogLoaded(entries);
     } on TimeoutException {
       if (mounted) {
@@ -263,7 +270,8 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
         return;
       }
       unawaited(_saveCsvCache(sheetId, response.body));
-      final entries = await _buildEntries(response.body);
+      final raw = _parseRaw(response.body);
+      final entries = await _mergeImdb(raw);
       if (mounted) state = CatalogLoaded(entries);
     } catch (_) {}
   }
@@ -443,6 +451,7 @@ final downloadProvider =
 
 class DownloadNotifier extends Notifier<DownloadState> {
   final _queue = <_DownloadJob>[];
+  final _failedJobs = <_DownloadJob>[];
   http.Client? _client;
   bool _cancelled = false;
   bool _running = false;
@@ -475,8 +484,9 @@ class DownloadNotifier extends Notifier<DownloadState> {
 
   Future<void> _processQueue() async {
     _running = true;
+    _failedJobs.clear();
     String? lastFilePath;
-    final failed = <String>[];
+    final failedMessages = <String>[];
 
     while (_queue.isNotEmpty && !_cancelled) {
       final job = _queue.removeAt(0);
@@ -485,21 +495,29 @@ class DownloadNotifier extends Notifier<DownloadState> {
         if (path.isNotEmpty) lastFilePath = path;
       } catch (e) {
         if (_cancelled || _disposed) break;
-        failed.add('"${job.title}": $e');
-        // Continue with remaining jobs.
+        _failedJobs.add(job);
+        failedMessages.add('"${job.title}": $e');
       }
     }
 
     _running = false;
     if (_cancelled || _disposed) return;
-    if (failed.isNotEmpty) {
-      final summary = '${failed.length} download(s) failed:\n${failed.join('\n')}';
+    if (failedMessages.isNotEmpty) {
+      final summary = '${failedMessages.length} download(s) failed:\n${failedMessages.join('\n')}';
       state = DownloadError(summary);
     } else if (lastFilePath != null) {
       state = DownloadDone(lastFilePath);
     } else {
       state = DownloadIdle();
     }
+  }
+
+  void retryFailed() {
+    if (_failedJobs.isEmpty) return;
+    _queue.addAll(_failedJobs);
+    _failedJobs.clear();
+    _cancelled = false;
+    _processQueue();
   }
 
   /// Runs a single download job. Returns the saved file path on success.

@@ -637,6 +637,7 @@ class _SeriesThumbnail extends StatelessWidget {
                   CachedNetworkImage(
                     imageUrl: url,
                     cacheManager: CatalogCacheManager.instance,
+                    memCacheWidth: 400,
                     fit: BoxFit.cover,
                     placeholder: (_, _) => _placeholder(),
                     errorWidget: (_, _, _) => _placeholder(),
@@ -651,6 +652,7 @@ class _SeriesThumbnail extends StatelessWidget {
                   CachedNetworkImage(
                     imageUrl: url,
                     cacheManager: CatalogCacheManager.instance,
+                    memCacheWidth: 400,
                     fit: BoxFit.cover,
                     placeholder: (_, _) => const SizedBox.shrink(),
                     errorWidget: (_, _, _) => const SizedBox.shrink(),
