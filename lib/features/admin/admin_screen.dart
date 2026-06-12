@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:math' show min;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:csv/csv.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/catalog_cache_manager.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../catalog/config_service.dart';
 import '../catalog/imdb_service.dart';
 import '../catalog/models/imdb_data.dart';
 import '../catalog/models/episode_sheet_schema.dart';
@@ -21,7 +25,9 @@ final _adminPalette = AppTab.admin.palette;
 // Amber badge for top-4 slide picks.
 const _kTop4Color = Color(0xFFF59E0B);
 
-enum _AdminMode { movie, series, episode }
+enum _AdminMode { movie, series, episode, requests }
+
+const _kAdminMode = 'admin_last_mode';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -97,6 +103,14 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     ]) {
       c.addListener(_onFieldChanged);
     }
+    _restoreMode();
+  }
+
+  Future<void> _restoreMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idx = prefs.getInt(_kAdminMode) ?? 0;
+    final mode = _AdminMode.values[idx.clamp(0, _AdminMode.values.length - 1)];
+    if (mounted && mode != _mode) setState(() => _mode = mode);
   }
 
   @override
@@ -162,6 +176,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   void _setMode(_AdminMode mode) {
     if (mode == _mode) return;
+    SharedPreferences.getInstance().then((p) => p.setInt(_kAdminMode, mode.index));
     setState(() {
       _mode             = mode;
       _data             = null;
@@ -185,13 +200,39 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     });
   }
 
+  Future<void> _loadRequest(String imdbId) async {
+    _imdbIdCtrl.text = imdbId;
+    setState(() { _fetching = true; _error = null; _data = null; });
+
+    final results = await ImdbService().resolve([imdbId]);
+    if (!mounted) return;
+
+    final data = results[imdbId];
+    // Detect series: ended series have endYear; ongoing series typically lack
+    // runtimeSeconds (episodes have per-ep runtime, not a single feature length).
+    final isSeries = data != null &&
+        data.parentId == null &&
+        data.seasonNumber == null &&
+        (data.endYear != null || data.runtimeSeconds == null);
+
+    _setMode(isSeries ? _AdminMode.series : _AdminMode.movie);
+    _imdbIdCtrl.text = imdbId;
+
+    if (isSeries) {
+      await _fetchSeries(imdbId);
+    } else {
+      await _fetchMovie(imdbId);
+    }
+  }
+
   Future<void> _fetch() async {
     final id = _imdbIdCtrl.text.trim();
     if (id.isEmpty) return;
     switch (_mode) {
-      case _AdminMode.movie:   await _fetchMovie(id);
-      case _AdminMode.series:  await _fetchSeries(id);
-      case _AdminMode.episode: await _fetchEpisode(id, _seriesImdbCtrl.text.trim());
+      case _AdminMode.movie:    await _fetchMovie(id);
+      case _AdminMode.series:   await _fetchSeries(id);
+      case _AdminMode.episode:  await _fetchEpisode(id, _seriesImdbCtrl.text.trim());
+      case _AdminMode.requests: return;
     }
   }
 
@@ -640,7 +681,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   ),
           ),
           const SizedBox(height: 20),
-          if (_fetching)
+          if (_mode == _AdminMode.requests)
+            Expanded(
+              child: _AdminRequestsPanel(onLoad: _loadRequest),
+            )
+          else if (_fetching)
             Expanded(
               child: Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -762,78 +807,82 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
               style: TextStyle(fontSize: 13, color: kTextPrimary),
               icon: Icon(Icons.expand_more_rounded, size: 16, color: kTextMuted),
               items: const [
-                DropdownMenuItem(value: _AdminMode.movie,   child: Text('Movie')),
-                DropdownMenuItem(value: _AdminMode.series,  child: Text('Series')),
-                DropdownMenuItem(value: _AdminMode.episode, child: Text('Episode')),
+                DropdownMenuItem(value: _AdminMode.movie,    child: Text('Movie')),
+                DropdownMenuItem(value: _AdminMode.series,   child: Text('Series')),
+                DropdownMenuItem(value: _AdminMode.episode,  child: Text('Episode')),
+                DropdownMenuItem(value: _AdminMode.requests, child: Text('Requests')),
               ],
               onChanged: (v) { if (v != null) _setMode(v); },
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        // Primary IMDB ID field
-        Expanded(
-          child: TextField(
-            controller: _imdbIdCtrl,
-            style: TextStyle(fontSize: 13, color: kTextPrimary),
-            decoration: InputDecoration(
-              hintText: switch (_mode) {
-                _AdminMode.movie    => 'IMDB ID  (e.g. tt30825738)',
-                _AdminMode.series   => 'Series IMDB ID  (tt…)',
-                _AdminMode.episode  => 'Episode IMDB ID  (tt…)',
-              },
-              hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
-              filled: true,
-              fillColor: kSurfaceColor,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: kBorderColor)),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: kBorderColor)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: _adminPalette.primary)),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        if (_mode != _AdminMode.requests) ...[
+          const SizedBox(width: 12),
+          // Primary IMDB ID field
+          Expanded(
+            child: TextField(
+              controller: _imdbIdCtrl,
+              style: TextStyle(fontSize: 13, color: kTextPrimary),
+              decoration: InputDecoration(
+                hintText: switch (_mode) {
+                  _AdminMode.movie    => 'IMDB ID  (e.g. tt30825738)',
+                  _AdminMode.series   => 'Series IMDB ID  (tt…)',
+                  _AdminMode.episode  => 'Episode IMDB ID  (tt…)',
+                  _AdminMode.requests => '',
+                },
+                hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
+                filled: true,
+                fillColor: kSurfaceColor,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: kBorderColor)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: kBorderColor)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _adminPalette.primary)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onSubmitted: (_) => _fetch(),
             ),
-            onSubmitted: (_) => _fetch(),
           ),
-        ),
-        // Series IMDB ID — Episode mode only
-        if (isEpisode) ...[
+          // Series IMDB ID — Episode mode only
+          if (isEpisode) ...[
+            const SizedBox(width: 8),
+            Expanded(child: _buildSeriesIdField()),
+          ],
           const SizedBox(width: 8),
-          Expanded(child: _buildSeriesIdField()),
-        ],
-        const SizedBox(width: 8),
-        Tooltip(
-          message: 'Paste row from clipboard',
-          child: IconButton(
-            onPressed: _pasteFromClipboard,
-            icon: const Icon(Icons.content_paste_rounded, size: 18),
-            style: IconButton.styleFrom(
-              foregroundColor: kTextSecondary,
-              backgroundColor: kSurfaceColor,
-              side: BorderSide(color: kBorderColor),
+          Tooltip(
+            message: 'Paste row from clipboard',
+            child: IconButton(
+              onPressed: _pasteFromClipboard,
+              icon: const Icon(Icons.content_paste_rounded, size: 18),
+              style: IconButton.styleFrom(
+                foregroundColor: kTextSecondary,
+                backgroundColor: kSurfaceColor,
+                side: BorderSide(color: kBorderColor),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.all(12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: _fetching ? null : _fetch,
+            icon: const Icon(Icons.search_rounded, size: 16),
+            label: const Text('Fetch'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _adminPalette.primary,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
-              padding: const EdgeInsets.all(12),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        FilledButton.icon(
-          onPressed: _fetching ? null : _fetch,
-          icon: const Icon(Icons.search_rounded, size: 16),
-          label: const Text('Fetch'),
-          style: FilledButton.styleFrom(
-            backgroundColor: _adminPalette.primary,
-            foregroundColor: Colors.black,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8)),
-          ),
-        ),
+        ],
       ],
     );
   }
@@ -1834,6 +1883,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             : List.filled(EpisodeSheetSchema.columnCount, '');
         columns = EpisodeSheetSchema.columns;
         tsvRow  = EpisodeSheetSchema.buildTsv(values);
+      case _AdminMode.requests:
+        return const SizedBox.shrink();
     }
 
     return Column(
@@ -2382,6 +2433,355 @@ class _ToggleChip extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Admin Requests Panel ──────────────────────────────────────────────────────
+
+typedef _RequestRow = ({
+  String timestamp,
+  String imdbId,
+  String imdbUrl,
+  String title,
+  String posterUrl,
+  int? year,
+  String type,
+});
+
+class _AdminRequestsPanel extends ConsumerStatefulWidget {
+  final void Function(String imdbId) onLoad;
+  const _AdminRequestsPanel({required this.onLoad});
+
+  @override
+  ConsumerState<_AdminRequestsPanel> createState() =>
+      _AdminRequestsPanelState();
+}
+
+class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
+  bool _loading = false;
+  String? _error;
+  List<_RequestRow> _rows = [];
+
+  static final _imdbUrlRe =
+      RegExp(r'imdb\.com/title/(tt\d+)', caseSensitive: false);
+  static final _sheetIdRe =
+      RegExp(r'/spreadsheets/d/([a-zA-Z0-9_-]+)');
+
+  static String _inferType(ImdbData? data) {
+    if (data == null) return 'Movie';
+    if (data.parentId != null || data.seasonNumber != null) return 'Episode';
+    if (data.endYear != null) return 'Series';
+    if (data.runtimeSeconds == null) return 'Series';
+    return 'Movie';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final config =
+          ref.read(sheetConfigProvider).valueOrNull ?? const SheetConfig();
+      final resUrl = config.requestResUrl;
+      if (resUrl == null || resUrl.isEmpty) {
+        setState(() {
+          _loading = false;
+          _error = 'request_res_url not configured in the Config sheet.';
+        });
+        return;
+      }
+
+      final sheetId = _sheetIdRe.firstMatch(resUrl)?.group(1);
+      if (sheetId == null) {
+        setState(() { _loading = false; _error = 'Invalid responses sheet URL.'; });
+        return;
+      }
+
+      final csvUrl =
+          'https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:csv';
+      final response = await http
+          .get(Uri.parse(csvUrl))
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode != 200 ||
+          response.body.trimLeft().startsWith('<')) {
+        setState(() {
+          _loading = false;
+          _error =
+              'Could not load responses sheet. Make sure it is shared publicly.';
+        });
+        return;
+      }
+
+      final normalized =
+          response.body.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+      final allRows =
+          const CsvToListConverter(eol: '\n').convert(normalized);
+
+      if (allRows.isEmpty) {
+        setState(() { _loading = false; _rows = []; });
+        return;
+      }
+
+      final headers = allRows[0]
+          .map((h) => h.toString().trim().toLowerCase())
+          .toList();
+      final tsIdx = headers.indexOf('timestamp');
+      final linkIdx = headers.indexOf('imdb link');
+
+      final rawRows = <({String timestamp, String imdbId, String imdbUrl})>[];
+      for (final row in allRows.skip(1)) {
+        final ts = tsIdx >= 0 && tsIdx < row.length
+            ? row[tsIdx].toString().trim()
+            : '';
+        final url = linkIdx >= 0 && linkIdx < row.length
+            ? row[linkIdx].toString().trim()
+            : '';
+        final id = _imdbUrlRe.firstMatch(url)?.group(1) ?? '';
+        if (id.isNotEmpty) {
+          rawRows.add((timestamp: ts, imdbId: id, imdbUrl: url));
+        }
+      }
+
+      final ids = rawRows.map((r) => r.imdbId).toSet().toList();
+      final imdbMap = ids.isEmpty
+          ? <String, ImdbData>{}
+          : await ImdbService().resolve(ids);
+
+      final parsed = rawRows.map((r) {
+        final data = imdbMap[r.imdbId];
+        return (
+          timestamp: r.timestamp,
+          imdbId: r.imdbId,
+          imdbUrl: r.imdbUrl,
+          title: data?.title ?? r.imdbId,
+          posterUrl: data?.posterUrl ?? '',
+          year: data?.releaseDate?.year,
+          type: _inferType(data),
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _rows = parsed.reversed.toList(); // newest first
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CircularProgressIndicator(color: _adminPalette.primary),
+          const SizedBox(height: 12),
+          Text('Loading requests…',
+              style: TextStyle(fontSize: 13, color: kTextMuted)),
+        ]),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline_rounded,
+              size: 40, color: Colors.redAccent),
+          const SizedBox(height: 12),
+          Text(_error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: kTextSecondary)),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Retry'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _adminPalette.primary,
+              foregroundColor: Colors.black,
+            ),
+          ),
+        ]),
+      );
+    }
+
+    if (_rows.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.inbox_rounded, size: 48, color: kTextMuted),
+          const SizedBox(height: 12),
+          Text('No requests yet.',
+              style: TextStyle(fontSize: 14, color: kTextMuted)),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Refresh'),
+            style: TextButton.styleFrom(
+                foregroundColor: _adminPalette.primary),
+          ),
+        ]),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Text('${_rows.length} request${_rows.length == 1 ? '' : 's'}',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: _adminPalette.primary,
+                  fontWeight: FontWeight.w600)),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh_rounded, size: 15),
+            label: const Text('Refresh', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+                foregroundColor: _adminPalette.primary),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.separated(
+            itemCount: _rows.length,
+            separatorBuilder: (_, _) =>
+                Divider(height: 1, color: kBorderColor),
+            itemBuilder: (_, i) {
+              final row = _rows[i];
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: row.posterUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: row.posterUrl,
+                              cacheManager: CatalogCacheManager.instance,
+                              width: 48,
+                              height: 68,
+                              fit: BoxFit.cover,
+                              placeholder: (_, _) => Container(
+                                width: 48,
+                                height: 68,
+                                color: kSurfaceColor,
+                              ),
+                              errorWidget: (_, _, _) => Container(
+                                width: 48,
+                                height: 68,
+                                color: kSurfaceColor,
+                                child: const Icon(Icons.broken_image_rounded,
+                                    size: 20, color: kTextMuted),
+                              ),
+                            )
+                          : Container(
+                              width: 48,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: kSurfaceColor,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Icon(Icons.movie_rounded,
+                                  size: 22, color: kTextMuted),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            row.title,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: kTextPrimary),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              if (row.year != null)
+                                _ReqChip(label: '${row.year}'),
+                              _ReqChip(label: row.type),
+                              _ReqChip(
+                                  label: row.imdbId,
+                                  color: _adminPalette.primary
+                                      .withValues(alpha: 0.15),
+                                  textColor: _adminPalette.primary),
+                            ],
+                          ),
+                          if (row.timestamp.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(row.timestamp,
+                                style: const TextStyle(
+                                    fontSize: 10, color: kTextMuted)),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: () => widget.onLoad(row.imdbId),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _adminPalette.primary,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(7)),
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                      child: const Text('Load'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReqChip extends StatelessWidget {
+  final String label;
+  final Color? color;
+  final Color? textColor;
+
+  const _ReqChip({required this.label, this.color, this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color ?? kSurfaceColor,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: kBorderColor),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+            fontSize: 10,
+            color: textColor ?? kTextSecondary,
+            fontWeight: FontWeight.w500),
       ),
     );
   }

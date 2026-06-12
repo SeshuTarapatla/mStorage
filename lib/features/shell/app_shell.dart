@@ -29,8 +29,7 @@ final activeTabProvider = StateProvider<AppTab>((ref) {
   if (settings.tabOrder != null && settings.tabOrder!.isNotEmpty) {
     return AppTab.values[settings.tabOrder!.first.clamp(0, AppTab.settings.index)];
   }
-  final sheetUrl = ref.read(sheetUrlProvider);
-  return sheetUrl != null ? AppTab.catalog : AppTab.encode;
+  return AppTab.catalog;
 });
 
 final ghAuthProvider = FutureProvider<bool>(
