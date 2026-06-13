@@ -2138,6 +2138,9 @@ class _SubTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Themes with a gradient backdrop use a transparent page surface; forcing an
+    // alpha onto it would fade to pure black. Fall back to the theme bg instead.
+    final base = surfaceColor.a == 0 ? kBgColor : surfaceColor;
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
@@ -2147,8 +2150,8 @@ class _SubTabBar extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                surfaceColor.withValues(alpha: 0.0),
-                surfaceColor.withValues(alpha: 0.92),
+                base.withValues(alpha: 0.0),
+                base.withValues(alpha: 0.92),
               ],
               stops: const [0.0, 0.38],
             ),

@@ -295,10 +295,11 @@ final _aurora = ThemeSpec(
     glow: const Color(0x66A78BFA),
     surface: _transparent,
   ),
+  // Single-accent theme: series shares the brand accent, not a separate colour.
   seriesPalette: const TabPalette(
-    primary: Color(0xFF6EE7F9),
-    secondary: Color(0xFFA78BFA),
-    glow: Color(0x666EE7F9),
+    primary: Color(0xFFA78BFA),
+    secondary: Color(0xFF6EE7F9),
+    glow: Color(0x66A78BFA),
     surface: _transparent,
   ),
 );
@@ -328,9 +329,10 @@ final _manuscript = ThemeSpec(
     glow: _transparent,
     surface: const Color(0xFFF6F2E9),
   ),
+  // Single-accent theme: series shares the brand accent, not a separate colour.
   seriesPalette: const TabPalette(
-    primary: Color(0xFFB4552D),
-    secondary: Color(0xFF2B4C7E),
+    primary: Color(0xFF2B4C7E),
+    secondary: Color(0xFFB4552D),
     glow: _transparent,
     surface: Color(0xFFF6F2E9),
   ),
@@ -396,10 +398,11 @@ final _clay = ThemeSpec(
     glow: const Color(0x339B8CFF),
     surface: const Color(0xFFE8EAF1),
   ),
+  // Single-accent theme: series shares the brand accent, not a separate colour.
   seriesPalette: const TabPalette(
-    primary: Color(0xFF5BD6A8),
-    secondary: Color(0xFF9B8CFF),
-    glow: Color(0x335BD6A8),
+    primary: Color(0xFF9B8CFF),
+    secondary: Color(0xFF5BD6A8),
+    glow: Color(0x339B8CFF),
     surface: Color(0xFFE8EAF1),
   ),
 );

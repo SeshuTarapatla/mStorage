@@ -20,7 +20,9 @@ import '../catalog/models/series_sheet_schema.dart';
 import '../catalog/models/sheet_schema.dart';
 import '../catalog/series_notifier.dart';
 
-final _adminPalette = AppTab.admin.palette;
+// Getter (not a cached top-level final) so the admin accent follows the active
+// theme instead of freezing to whatever theme was loaded first.
+TabPalette get _adminPalette => AppTab.admin.palette;
 
 // Amber badge for top-4 slide picks.
 const _kTop4Color = Color(0xFFF59E0B);
