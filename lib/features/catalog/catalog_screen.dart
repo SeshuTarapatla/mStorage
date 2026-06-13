@@ -2565,7 +2565,7 @@ class _RequestDialogState extends ConsumerState<_RequestDialog> {
                             : null,
                     style: FilledButton.styleFrom(
                       backgroundColor: _palette.primary,
-                      foregroundColor: Colors.black,
+                      foregroundColor: onAccentColor(_palette.primary),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 12),
                       shape: RoundedRectangleBorder(

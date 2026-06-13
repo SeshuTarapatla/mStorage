@@ -29,6 +29,15 @@ AppThemeId appThemeIdFromString(String? s) {
   return AppThemeId.spectrum;
 }
 
+/// Readable on-colour (black or white) for text/icons placed on a solid [fill],
+/// chosen by contrast. Bright fills keep black (so Spectrum is unchanged); dark
+/// accent fills (Monolith/Manuscript) flip to white. The crossover sits at the
+/// luminance where black text stops being legible (~0.18).
+Color onAccentColor(Color fill) {
+  final l = fill.computeLuminance();
+  return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? Colors.black : Colors.white;
+}
+
 /// A complete visual identity: colour tokens, typography, shape, elevation and
 /// the per-tab accent map. Switching themes = swapping the active [ThemeSpec].
 ///
@@ -109,6 +118,7 @@ class ThemeSpec {
               surface: surface,
               onSurface: textPrimary,
               primary: brandAccent,
+              onPrimary: onAccentColor(brandAccent),
               brightness: isDark ? Brightness.dark : Brightness.light,
             );
 

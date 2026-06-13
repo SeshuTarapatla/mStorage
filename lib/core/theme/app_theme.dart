@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'theme_spec.dart';
 
+// Re-exported so existing `import app_theme.dart` call sites can use it.
+export 'theme_spec.dart' show onAccentColor;
+
 // Theme tokens. These are GETTERS (not const) so the whole app re-skins at
 // runtime when [applyThemeGlobals] swaps [activeSpec] and the tree rebuilds.
 // Call sites are unchanged (`kBgColor`, `kTextPrimary`, …); the only cost is

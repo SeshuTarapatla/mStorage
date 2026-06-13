@@ -878,7 +878,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             label: const Text('Fetch'),
             style: FilledButton.styleFrom(
               backgroundColor: _adminPalette.primary,
-              foregroundColor: Colors.black,
+              foregroundColor: onAccentColor(_adminPalette.primary),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
@@ -1215,7 +1215,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
               onPressed: () => _addGenre(_genreInputCtrl.text),
               style: FilledButton.styleFrom(
                 backgroundColor: _adminPalette.primary,
-                foregroundColor: Colors.black,
+                foregroundColor: onAccentColor(_adminPalette.primary),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
@@ -1308,7 +1308,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
               onPressed: () => _addTag(_tagInputCtrl.text),
               style: FilledButton.styleFrom(
                 backgroundColor: _adminPalette.primary,
-                foregroundColor: Colors.black,
+                foregroundColor: onAccentColor(_adminPalette.primary),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
@@ -1906,7 +1906,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
               label: const Text('Copy row'),
               style: FilledButton.styleFrom(
                 backgroundColor: _adminPalette.primary,
-                foregroundColor: Colors.black,
+                foregroundColor: onAccentColor(_adminPalette.primary),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(
@@ -2161,7 +2161,7 @@ class _LightboxActionBtn extends StatelessWidget {
       label: Text(label, style: const TextStyle(fontSize: 11)),
       style: FilledButton.styleFrom(
         backgroundColor: bg,
-        foregroundColor: Colors.white,
+        foregroundColor: onAccentColor(bg),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
@@ -2609,7 +2609,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
             label: const Text('Retry'),
             style: FilledButton.styleFrom(
               backgroundColor: _adminPalette.primary,
-              foregroundColor: Colors.black,
+              foregroundColor: onAccentColor(_adminPalette.primary),
             ),
           ),
         ]),
@@ -2742,7 +2742,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
                       onPressed: () => widget.onLoad(row.imdbId),
                       style: FilledButton.styleFrom(
                         backgroundColor: _adminPalette.primary,
-                        foregroundColor: Colors.black,
+                        foregroundColor: onAccentColor(_adminPalette.primary),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 8),
                         shape: RoundedRectangleBorder(
