@@ -100,7 +100,7 @@ class _CatalogCardState extends State<CatalogCard> {
                       widget.entry.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: kTextPrimary,
@@ -111,7 +111,7 @@ class _CatalogCardState extends State<CatalogCard> {
                       Text(
                         _fmt(widget.entry.date!),
                         style:
-                            const TextStyle(fontSize: 11, color: kTextMuted),
+                            TextStyle(fontSize: 11, color: kTextMuted),
                       ),
                     ],
                     if (widget.entry.genres.isNotEmpty) ...[
@@ -326,7 +326,7 @@ class CatalogCardExpandedState extends ConsumerState<CatalogCardExpanded> {
                       Expanded(
                         child: Text(
                           entry.title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: kTextPrimary,
@@ -402,7 +402,7 @@ class CatalogCardExpandedState extends ConsumerState<CatalogCardExpanded> {
                               entry.stars.join(' · '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 11, color: kTextMuted),
                             ),
                           ],
@@ -410,7 +410,7 @@ class CatalogCardExpandedState extends ConsumerState<CatalogCardExpanded> {
                             const SizedBox(height: 12),
                             Text(
                               entry.plot,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: kTextSecondary,
                                 height: 1.55,
@@ -878,7 +878,7 @@ class _ThumbnailState extends State<_Thumbnail> {
 
   Widget _placeholder() => Container(
         color: kSurface2Color,
-        child: const Icon(Icons.movie_rounded, color: kTextMuted, size: 32),
+        child: Icon(Icons.movie_rounded, color: kTextMuted, size: 32),
       );
 }
 

@@ -705,7 +705,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   const SizedBox(height: 12),
                   Text(_error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13, color: kTextSecondary)),
+                      style: TextStyle(fontSize: 13, color: kTextSecondary)),
                 ]),
               ),
             )
@@ -1029,7 +1029,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(data.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: kTextPrimary)),
@@ -1051,13 +1051,13 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 Text(data.plot,
                     maxLines: 4,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: kTextSecondary, height: 1.5)),
               ],
               if (data.stars.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(data.stars.join(' · '),
-                    style: const TextStyle(fontSize: 11, color: kTextMuted)),
+                    style: TextStyle(fontSize: 11, color: kTextMuted)),
               ],
             ],
           ),
@@ -1068,7 +1068,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
   Widget _posterPlaceholder() => Container(
       color: kSurface2Color,
-      child: const Icon(Icons.movie_rounded, size: 36, color: kTextMuted));
+      child: Icon(Icons.movie_rounded, size: 36, color: kTextMuted));
 
   // ── Date editor ───────────────────────────────────────────────────────────
 
@@ -1113,7 +1113,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     1, _daysInMonth(v ?? currentYear, _selectedMonth).last);
               }),
             ),
-            const Padding(
+            Padding(
                 padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Text('–', style: TextStyle(color: kTextMuted))),
             _DateDropdown<int>(
@@ -1130,7 +1130,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     1, _daysInMonth(_selectedYear ?? currentYear, v ?? 1).last);
               }),
             ),
-            const Padding(
+            Padding(
                 padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Text('–', style: TextStyle(color: kTextMuted))),
             _DateDropdown<int>(
@@ -1348,7 +1348,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           cacheManager: CatalogCacheManager.instance,
           errorWidget: (_, _, _) => Container(
             color: kSurface2Color,
-            child: const Icon(Icons.broken_image_rounded, size: 24, color: kTextMuted),
+            child: Icon(Icons.broken_image_rounded, size: 24, color: kTextMuted),
           ),
         ),
       ),
@@ -1629,7 +1629,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                     children: [
                       Text(
                         _episodeData!.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: kTextPrimary),
@@ -1638,7 +1638,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                         const SizedBox(height: 3),
                         Text(
                           _fmtDate(_episodeData!.releaseDate!),
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 11, color: kTextSecondary),
                         ),
                       ],
@@ -2075,7 +2075,7 @@ class _ImageLightboxState extends State<_ImageLightbox> {
                               errorWidget: (_, _, _) => Container(
                                   width: 400, height: 300,
                                   color: kSurface2Color,
-                                  child: const Icon(Icons.broken_image_rounded,
+                                  child: Icon(Icons.broken_image_rounded,
                                       size: 48, color: kTextMuted)),
                             ),
                           ),
@@ -2342,7 +2342,7 @@ class _GenreRow extends StatelessWidget {
         children: [
           ReorderableDragStartListener(
             index: index,
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 10),
               child: Icon(Icons.drag_handle_rounded, size: 16, color: kTextMuted),
             ),
@@ -2599,7 +2599,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
           const SizedBox(height: 12),
           Text(_error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: kTextSecondary)),
+              style: TextStyle(fontSize: 13, color: kTextSecondary)),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _load,
@@ -2682,7 +2682,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
                                 width: 48,
                                 height: 68,
                                 color: kSurfaceColor,
-                                child: const Icon(Icons.broken_image_rounded,
+                                child: Icon(Icons.broken_image_rounded,
                                     size: 20, color: kTextMuted),
                               ),
                             )
@@ -2693,7 +2693,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
                                 color: kSurfaceColor,
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.movie_rounded,
+                              child: Icon(Icons.movie_rounded,
                                   size: 22, color: kTextMuted),
                             ),
                     ),
@@ -2704,7 +2704,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
                         children: [
                           Text(
                             row.title,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: kTextPrimary),
@@ -2729,7 +2729,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
                           if (row.timestamp.isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text(row.timestamp,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 10, color: kTextMuted)),
                           ],
                         ],
@@ -2853,7 +2853,7 @@ class _ResultRowState extends State<_ResultRow> {
           SizedBox(
             width: 108,
             child: Text(widget.label,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12,
                     color: kTextMuted,
                     fontWeight: FontWeight.w500)),

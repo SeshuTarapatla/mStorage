@@ -33,7 +33,7 @@ class _SeriesCardState extends State<SeriesCard> {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final e = widget.entry;
     final seasonCount  = e.seasons.length;
     final episodeCount = e.totalEpisodes;
@@ -87,7 +87,7 @@ class _SeriesCardState extends State<SeriesCard> {
                       e.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: kTextPrimary,
@@ -96,7 +96,7 @@ class _SeriesCardState extends State<SeriesCard> {
                     const SizedBox(height: 3),
                     Text(
                       _countLabel(seasonCount, episodeCount),
-                      style: const TextStyle(fontSize: 11, color: kTextMuted),
+                      style: TextStyle(fontSize: 11, color: kTextMuted),
                     ),
                     if (e.genres.isNotEmpty) ...[
                       const SizedBox(height: 6),
@@ -170,7 +170,7 @@ class SeriesCardExpandedState extends State<SeriesCardExpanded> {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final e = widget.entry;
 
     return Container(
@@ -219,7 +219,7 @@ class SeriesCardExpandedState extends State<SeriesCardExpanded> {
                       Expanded(
                         child: Text(
                           e.title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: kTextPrimary,
@@ -300,7 +300,7 @@ class SeriesCardExpandedState extends State<SeriesCardExpanded> {
                             const SizedBox(height: 12),
                             Text(
                               e.plot,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: kTextSecondary,
                                 height: 1.55,
@@ -375,7 +375,7 @@ class _SeasonSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -405,7 +405,7 @@ class _SeasonSection extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   '${season.episodes.length} episodes',
-                  style: const TextStyle(fontSize: 11, color: kTextMuted),
+                  style: TextStyle(fontSize: 11, color: kTextMuted),
                 ),
               ],
             ),
@@ -452,7 +452,7 @@ class _EpisodeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final ep = episode;
 
     return Padding(
@@ -468,7 +468,7 @@ class _EpisodeRow extends StatelessWidget {
               children: [
                 Text(
                   'E${ep.episodeNumber.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: kTextMuted,
@@ -496,25 +496,25 @@ class _EpisodeRow extends StatelessWidget {
                   ep.displayTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: kTextPrimary),
+                  style: TextStyle(fontSize: 12, color: kTextPrimary),
                 ),
                 if (ep.plot.isNotEmpty)
                   Text(
                     ep.plot,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 10, color: kTextMuted, height: 1.4),
                   )
                 else if (ep.airDate != null)
                   Text(
                     _fmtDate(ep.airDate!),
-                    style: const TextStyle(fontSize: 10, color: kTextMuted),
+                    style: TextStyle(fontSize: 10, color: kTextMuted),
                   ),
                 if (ep.plot.isNotEmpty && ep.airDate != null)
                   Text(
                     _fmtDate(ep.airDate!),
-                    style: const TextStyle(fontSize: 10, color: kTextMuted),
+                    style: TextStyle(fontSize: 10, color: kTextMuted),
                   ),
               ],
             ),
@@ -672,7 +672,7 @@ class _SeriesThumbnail extends StatelessWidget {
 
   Widget _placeholder() => Container(
         color: kSurface2Color,
-        child: const Icon(Icons.live_tv_rounded,
+        child: Icon(Icons.live_tv_rounded,
             color: kTextMuted, size: 32),
       );
 }
@@ -748,7 +748,7 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final color = muted ? kTextMuted : palette.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),

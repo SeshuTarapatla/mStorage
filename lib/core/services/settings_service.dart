@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/settings_model.dart';
+import '../theme/theme_spec.dart';
 
 String _mStorageBase() {
-  final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
+  final home =
+      Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
   return p.join(home, 'Videos', 'mStorage');
 }
 
@@ -28,6 +30,7 @@ const _kLastVideoPath = 'last_video_path';
 const _kTabOrder = 'tab_order';
 const _kDeleteAfterDecode = 'setting_delete_after_decode';
 const _kPlayerVolume = 'player_volume';
+const _kThemeId = 'setting_theme_id';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -48,13 +51,22 @@ class SettingsNotifier extends Notifier<AppSettings> {
       syncplayUsername: _prefs.getString(_kSyncplayUsername) ?? '',
       syncplayRoom: _prefs.getString(_kSyncplayRoom) ?? '',
       lastVideoPath: _prefs.getString(_kLastVideoPath) ?? '',
-      tabOrder: _prefs.getString(_kTabOrder)
+      tabOrder: _prefs
+          .getString(_kTabOrder)
           ?.split(',')
           .map(int.parse)
           .toList(),
       deleteAfterDecode: _prefs.getBool(_kDeleteAfterDecode) ?? false,
       playerVolume: _prefs.getDouble(_kPlayerVolume) ?? 100.0,
+      themeId: _prefs.getString(_kThemeId) ?? 'spectrum',
     );
+    applyThemeGlobals(appThemeIdFromString(state.themeId));
+  }
+
+  Future<void> setThemeId(AppThemeId id) async {
+    applyThemeGlobals(id);
+    state = state.copyWith(themeId: id.id);
+    await _prefs.setString(_kThemeId, id.id);
   }
 
   Future<void> setPassword(String value) async {
@@ -138,6 +150,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       tabOrder: null,
       deleteAfterDecode: state.deleteAfterDecode,
       playerVolume: state.playerVolume,
+      themeId: state.themeId,
     );
   }
 
@@ -147,5 +160,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    NotifierProvider<SettingsNotifier, AppSettings>(SettingsNotifier.new);
+final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
+  SettingsNotifier.new,
+);

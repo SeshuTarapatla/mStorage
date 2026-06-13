@@ -622,7 +622,7 @@ class _CcButton extends StatelessWidget {
                 color: activeSubtitle == null ? accent : kTextMuted,
               ),
               const SizedBox(width: 8),
-              const Text('None', style: TextStyle(fontSize: 13, color: kTextPrimary)),
+              Text('None', style: TextStyle(fontSize: 13, color: kTextPrimary)),
             ],
           ),
         ),
@@ -639,7 +639,7 @@ class _CcButton extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   p.basename(sub),
-                  style: const TextStyle(fontSize: 13, color: kTextPrimary),
+                  style: TextStyle(fontSize: 13, color: kTextPrimary),
                 ),
               ],
             ),
@@ -836,7 +836,7 @@ class _PlayerPlaceholderState extends State<_PlayerPlaceholder> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'MP4 · MKV · MOV · AVI · WebM',
                     style: TextStyle(fontSize: 12, color: kTextMuted),
                   ),
@@ -892,14 +892,14 @@ class _FilenameBar extends StatelessWidget {
           Expanded(
             child: Text(
               p.basename(path),
-              style: const TextStyle(fontSize: 13, color: kTextPrimary),
+              style: TextStyle(fontSize: 13, color: kTextPrimary),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 12),
           Text(
             p.dirname(path),
-            style: const TextStyle(fontSize: 11, color: kTextMuted),
+            style: TextStyle(fontSize: 11, color: kTextMuted),
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -1178,7 +1178,7 @@ class _SyncplaySection extends StatelessWidget {
                     Icon(Icons.settings_ethernet_rounded,
                         size: 15, color: kTextMuted),
                     const SizedBox(width: 8),
-                    const Text('Port',
+                    Text('Port',
                         style:
                             TextStyle(fontSize: 13, color: kTextSecondary)),
                     const SizedBox(width: 12),
@@ -1298,16 +1298,16 @@ class _SyncplayField extends StatelessWidget {
           child: TextField(
             controller: controller,
             onChanged: onChanged,
-            style: const TextStyle(fontSize: 13, color: kTextPrimary),
+            style: TextStyle(fontSize: 13, color: kTextPrimary),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(fontSize: 13, color: kTextMuted),
+              hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
               isDense: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: kBorderColor),
+                borderSide: BorderSide(color: kBorderColor),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),

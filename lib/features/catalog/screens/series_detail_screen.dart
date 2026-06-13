@@ -130,7 +130,7 @@ class _TopBar extends StatelessWidget {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: kTextPrimary,
@@ -210,7 +210,7 @@ class _LeftPanel extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child:
-                    const Icon(Icons.live_tv_rounded, color: kTextMuted, size: 48),
+                    Icon(Icons.live_tv_rounded, color: kTextMuted, size: 48),
               ),
             ),
 
@@ -263,7 +263,7 @@ class _LeftPanel extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               e.plot,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 color: kTextSecondary,
                 height: 1.65,
@@ -305,7 +305,7 @@ class _RightPanel extends StatelessWidget {
           children: [
             Icon(Icons.video_library_outlined, size: 48, color: kTextMuted),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No episodes yet',
               style: TextStyle(
                   fontSize: 16,
@@ -313,7 +313,7 @@ class _RightPanel extends StatelessWidget {
                   color: kTextPrimary),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Add rows to the Episodes sheet to get started.',
               style: TextStyle(fontSize: 13, color: kTextMuted),
             ),
@@ -385,7 +385,7 @@ class _SeasonPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final color = active ? palette.primary : kTextMuted;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -456,7 +456,7 @@ class _EpisodeDetailRowState extends ConsumerState<_EpisodeDetailRow> {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final ep = widget.episode;
     final dlState = ref.watch(downloadProvider);
     final activeDl = dlState is DownloadActive && dlState.title == ep.displayTitle
@@ -510,7 +510,7 @@ class _EpisodeDetailRowState extends ConsumerState<_EpisodeDetailRow> {
                       )
                     : Container(
                         color: kSurface2Color,
-                        child: const Icon(Icons.movie_rounded,
+                        child: Icon(Icons.movie_rounded,
                             size: 22, color: kTextMuted),
                       ),
               ),
@@ -546,7 +546,7 @@ class _EpisodeDetailRowState extends ConsumerState<_EpisodeDetailRow> {
                                     ep.displayTitle,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                       color: kTextPrimary,
@@ -580,7 +580,7 @@ class _EpisodeDetailRowState extends ConsumerState<_EpisodeDetailRow> {
                                 ep.plot,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   color: kTextSecondary,
                                   height: 1.5,
@@ -802,7 +802,7 @@ class _MetaChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 10, color: kTextMuted),
+        style: TextStyle(fontSize: 10, color: kTextMuted),
       ),
     );
   }
@@ -851,7 +851,7 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const c = kTextSecondary;
+    final c = kTextSecondary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -878,7 +878,7 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const palette = kSeriesPalette;
+    final palette = kSeriesPalette;
     final color = muted ? kTextMuted : palette.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),

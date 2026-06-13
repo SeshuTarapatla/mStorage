@@ -10,6 +10,7 @@ import '../../core/models/settings_model.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../../core/theme/theme_spec.dart';
 import '../catalog/catalog_notifier.dart';
 import '../catalog/imdb_service.dart';
 import '../catalog/widgets/catalog_card.dart';
@@ -35,8 +36,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _passwordCtrl =
-        TextEditingController(text: ref.read(settingsProvider).password);
+    _passwordCtrl = TextEditingController(
+      text: ref.read(settingsProvider).password,
+    );
     PackageInfo.fromPlatform().then((info) {
       if (mounted) setState(() => _appVersion = info.version);
     });
@@ -58,30 +60,54 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           "What's new in v${info.version}",
-          style: const TextStyle(color: kTextPrimary, fontSize: 16),
+          style: TextStyle(color: kTextPrimary, fontSize: 16),
         ),
         content: SizedBox(
           width: 480,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 300),
             child: Markdown(
-              data: info.releaseNotes.isNotEmpty ? info.releaseNotes : '_No release notes available._',
+              data: info.releaseNotes.isNotEmpty
+                  ? info.releaseNotes
+                  : '_No release notes available._',
               shrinkWrap: true,
               padding: const EdgeInsets.only(top: 4),
               styleSheet: MarkdownStyleSheet(
-                p: const TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
-                h1: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: accent),
-                h2: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: accent),
-                h3: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kTextPrimary),
-                strong: const TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary),
-                em: const TextStyle(fontStyle: FontStyle.italic, color: kTextSecondary),
-                code: const TextStyle(fontSize: 11, color: kTextPrimary, fontFamily: 'monospace'),
+                p: TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
+                h1: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+                h2: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: accent,
+                ),
+                h3: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: kTextPrimary,
+                ),
+                strong: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: kTextPrimary,
+                ),
+                em: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: kTextSecondary,
+                ),
+                code: TextStyle(
+                  fontSize: 11,
+                  color: kTextPrimary,
+                  fontFamily: 'monospace',
+                ),
                 codeblockDecoration: BoxDecoration(
                   color: kSurface2Color,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                listBullet: const TextStyle(fontSize: 12, color: kTextSecondary),
-                horizontalRuleDecoration: const BoxDecoration(
+                listBullet: TextStyle(fontSize: 12, color: kTextSecondary),
+                horizontalRuleDecoration: BoxDecoration(
                   border: Border(top: BorderSide(color: kBorderColor)),
                 ),
               ),
@@ -105,14 +131,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     switch (updateState.status) {
       case UpdateStatus.checking:
-        return Text('$version  ·  Checking for updates…',
-            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+        return Text(
+          '$version  ·  Checking for updates…',
+          style: TextStyle(fontSize: 12, color: kTextSecondary),
+        );
       case UpdateStatus.upToDate:
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('$version  ·  Already up to date  ·',
-                style: const TextStyle(fontSize: 12, color: kTextSecondary)),
+            Text(
+              '$version  ·  Already up to date  ·',
+              style: TextStyle(fontSize: 12, color: kTextSecondary),
+            ),
             if (info?.releaseNotes.isNotEmpty == true) ...[
               const SizedBox(width: 8),
               GestureDetector(
@@ -134,8 +164,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Update available  ·',
-                style: TextStyle(fontSize: 12, color: accent)),
+            Text(
+              'Update available  ·',
+              style: TextStyle(fontSize: 12, color: accent),
+            ),
             const SizedBox(width: 8),
             GestureDetector(
               onTap: info?.releaseNotes.isNotEmpty == true
@@ -154,17 +186,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         );
       case UpdateStatus.downloading:
-        return Text('$version  ·  Downloading update…',
-            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+        return Text(
+          '$version  ·  Downloading update…',
+          style: TextStyle(fontSize: 12, color: kTextSecondary),
+        );
       case UpdateStatus.readyToInstall:
-        return Text('$version  ·  Ready to install',
-            style: TextStyle(fontSize: 12, color: accent));
+        return Text(
+          '$version  ·  Ready to install',
+          style: TextStyle(fontSize: 12, color: accent),
+        );
       case UpdateStatus.error:
-        return Text('$version  ·  ${updateState.errorMessage ?? 'Check failed'}',
-            style: const TextStyle(fontSize: 12, color: kDanger));
+        return Text(
+          '$version  ·  ${updateState.errorMessage ?? 'Check failed'}',
+          style: const TextStyle(fontSize: 12, color: kDanger),
+        );
       case UpdateStatus.idle:
-        return Text('$version  ·  Currently installed',
-            style: const TextStyle(fontSize: 12, color: kTextSecondary));
+        return Text(
+          '$version  ·  Currently installed',
+          style: TextStyle(fontSize: 12, color: kTextSecondary),
+        );
     }
   }
 
@@ -262,17 +302,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Clear all caches?',
-            style: TextStyle(color: kTextPrimary, fontSize: 16)),
-        content: const Text(
+        title: Text(
+          'Clear all caches?',
+          style: TextStyle(color: kTextPrimary, fontSize: 16),
+        ),
+        content: Text(
           'IMDB metadata, image URLs, catalog CSV, and cached poster images will be deleted. App settings are not affected.',
           style: TextStyle(color: kTextSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: _palette.primary)),
+            child: Text('Cancel', style: TextStyle(color: _palette.primary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -298,13 +339,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   static (IconData, String) _tabInfo(AppTab tab) => switch (tab) {
-        AppTab.encode   => (Icons.upload_rounded,        'Encode'),
-        AppTab.decode   => (Icons.download_rounded,      'Decode'),
-        AppTab.player   => (Icons.play_circle_rounded,   'Player'),
-        AppTab.catalog  => (Icons.photo_library_rounded, 'Catalog'),
-        AppTab.settings => (Icons.settings_rounded,      'Settings'),
-        AppTab.admin    => (Icons.admin_panel_settings_rounded, 'Admin'),
-      };
+    AppTab.encode => (Icons.upload_rounded, 'Encode'),
+    AppTab.decode => (Icons.download_rounded, 'Decode'),
+    AppTab.player => (Icons.play_circle_rounded, 'Player'),
+    AppTab.catalog => (Icons.photo_library_rounded, 'Catalog'),
+    AppTab.settings => (Icons.settings_rounded, 'Settings'),
+    AppTab.admin => (Icons.admin_panel_settings_rounded, 'Admin'),
+  };
 
   static List<int> _effectiveOrder(AppSettings settings, String? sheetUrl) {
     if (settings.tabOrder != null) return settings.tabOrder!;
@@ -326,7 +367,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ];
   }
 
-  Widget _buildLayoutSection(AppSettings settings, Color accent, String? sheetUrl) {
+  Widget _buildLayoutSection(
+    AppSettings settings,
+    Color accent,
+    String? sheetUrl,
+  ) {
     final order = _effectiveOrder(settings, sheetUrl);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -341,14 +386,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Page Order',
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: kTextPrimary)),
+                    Text(
+                      'Page Order',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: kTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    const Text('Drag to reorder sidebar pages.',
-                        style: TextStyle(fontSize: 12, color: kTextSecondary)),
+                    Text(
+                      'Drag to reorder sidebar pages.',
+                      style: TextStyle(fontSize: 12, color: kTextSecondary),
+                    ),
                   ],
                 ),
               ),
@@ -356,7 +406,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _ActionButton(
                   label: 'Reset',
                   accent: accent,
-                  onTap: () => ref.read(settingsProvider.notifier).resetTabOrder(),
+                  onTap: () =>
+                      ref.read(settingsProvider.notifier).resetTabOrder(),
                 ),
             ],
           ),
@@ -387,26 +438,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     key: ValueKey(order[index]),
                     height: 44,
                     decoration: index < order.length - 1
-                        ? const BoxDecoration(
+                        ? BoxDecoration(
                             border: Border(
-                                bottom: BorderSide(color: kBorderColor)))
+                              bottom: BorderSide(color: kBorderColor),
+                            ),
+                          )
                         : null,
                     child: Row(
                       children: [
                         ReorderableDragStartListener(
                           index: index,
-                          child: const Padding(
+                          child: Padding(
                             padding: EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 12),
-                            child: Icon(Icons.drag_handle_rounded,
-                                color: kTextMuted, size: 18),
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            child: Icon(
+                              Icons.drag_handle_rounded,
+                              color: kTextMuted,
+                              size: 18,
+                            ),
                           ),
                         ),
                         Icon(icon, color: accent, size: 16),
                         const SizedBox(width: 10),
-                        Text(label,
-                            style: const TextStyle(
-                                fontSize: 13, color: kTextPrimary)),
+                        Text(
+                          label,
+                          style: TextStyle(fontSize: 13, color: kTextPrimary),
+                        ),
                       ],
                     ),
                   );
@@ -425,17 +484,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Reset all settings?',
-            style: TextStyle(color: kTextPrimary, fontSize: 16)),
-        content: const Text(
+        title: Text(
+          'Reset all settings?',
+          style: TextStyle(color: kTextPrimary, fontSize: 16),
+        ),
+        content: Text(
           'Password, output directories, encode options and Syncplay config will all be cleared.',
           style: TextStyle(color: kTextSecondary, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: _palette.primary)),
+            child: Text('Cancel', style: TextStyle(color: _palette.primary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -471,6 +531,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 32),
 
+          // ── Appearance ───────────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Appearance',
+            accent: accent,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 2, 2, 6),
+                child: Text(
+                  'Theme — re-skins the whole app instantly',
+                  style: TextStyle(fontSize: 12, color: kTextSecondary),
+                ),
+              ),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: themeSpecs.values
+                    .map(
+                      (spec) => _ThemeSwatchCard(
+                        spec: spec,
+                        selected: spec.id.id == settings.themeId,
+                        accent: accent,
+                        onTap: () => ref
+                            .read(settingsProvider.notifier)
+                            .setThemeId(spec.id),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          ).animate().fadeIn(duration: 300.ms, delay: 20.ms),
+
+          const SizedBox(height: 20),
+
           // ── Updates ──────────────────────────────────────────────────────
           _SettingsGroup(
             label: 'Updates',
@@ -505,21 +598,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: TextField(
                     controller: _passwordCtrl,
                     obscureText: !_showPassword,
-                    style:
-                        const TextStyle(fontSize: 13, color: kTextPrimary),
+                    style: TextStyle(fontSize: 13, color: kTextPrimary),
                     onChanged: (v) =>
                         ref.read(settingsProvider.notifier).setPassword(v),
                     decoration: InputDecoration(
                       hintText: 'No password',
-                      hintStyle: const TextStyle(
-                          fontSize: 13, color: kTextMuted),
+                      hintStyle: TextStyle(fontSize: 13, color: kTextMuted),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                            const BorderSide(color: kBorderColor),
+                        borderSide: BorderSide(color: kBorderColor),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -576,14 +668,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onClear: settings.encodeOutputDirectory.isEmpty
                     ? null
                     : () => ref
-                        .read(settingsProvider.notifier)
-                        .setEncodeOutputDirectory(''),
+                          .read(settingsProvider.notifier)
+                          .setEncodeOutputDirectory(''),
                 placeholder: 'Default: Videos\\mStorage\\Encoded',
               ),
               _DirSettingRow(
                 icon: Icons.download_rounded,
                 title: 'Decode Output',
-                subtitle: 'Where extracted files from decoded videos are saved.',
+                subtitle:
+                    'Where extracted files from decoded videos are saved.',
                 accent: accent,
                 dir: settings.decodeOutputDirectory,
                 onPick: () async {
@@ -597,8 +690,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onClear: settings.decodeOutputDirectory.isEmpty
                     ? null
                     : () => ref
-                        .read(settingsProvider.notifier)
-                        .setDecodeOutputDirectory(''),
+                          .read(settingsProvider.notifier)
+                          .setDecodeOutputDirectory(''),
                 placeholder: 'Default: Videos\\mStorage\\Decoded',
               ),
               _DirSettingRow(
@@ -618,8 +711,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onClear: settings.catalogDownloadDirectory.isEmpty
                     ? null
                     : () => ref
-                        .read(settingsProvider.notifier)
-                        .setCatalogDownloadDirectory(''),
+                          .read(settingsProvider.notifier)
+                          .setCatalogDownloadDirectory(''),
                 placeholder: 'Default: Videos\\mStorage\\Downloaded',
               ),
             ],
@@ -731,7 +824,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ? const SizedBox.shrink()
                 : Container(
                     margin: const EdgeInsets.only(top: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
@@ -739,7 +835,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.check_circle_outline_rounded, size: 15, color: accent),
+                        Icon(
+                          Icons.check_circle_outline_rounded,
+                          size: 15,
+                          color: accent,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -752,7 +852,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             _cacheMessageTimer?.cancel();
                             setState(() => _cacheMessage = null);
                           },
-                          child: Icon(Icons.close_rounded, size: 14, color: accent),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: accent,
+                          ),
                         ),
                       ],
                     ),
@@ -772,10 +876,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle:
                     'Clear password, output directories, and Syncplay config.',
                 accent: kDanger,
-                control: _DangerButton(
-                  label: 'Reset',
-                  onTap: _confirmReset,
-                ),
+                control: _DangerButton(label: 'Reset', onTap: _confirmReset),
               ),
             ],
           ).animate().fadeIn(duration: 300.ms, delay: 260.ms),
@@ -790,13 +891,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'mStorage  v${_appVersion ?? '...'}',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: kTextMuted),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: kTextMuted,
+                  ),
                 ),
                 const SizedBox(height: 2),
-                const Text(
+                Text(
                   'Seshu Tarapatla  ·  Flutter · Windows',
                   style: TextStyle(fontSize: 11, color: kTextMuted),
                 ),
@@ -907,16 +1009,20 @@ class _SettingRowState extends State<_SettingRow> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(widget.title,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: kTextPrimary)),
+                    Text(
+                      widget.title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: kTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     widget.subtitleWidget ??
-                        Text(widget.subtitle,
-                            style: const TextStyle(
-                                fontSize: 12, color: kTextSecondary)),
+                        Text(
+                          widget.subtitle,
+                          style: TextStyle(fontSize: 12, color: kTextSecondary),
+                        ),
                   ],
                 ),
               ),
@@ -968,15 +1074,19 @@ class _DirSettingRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: kTextPrimary)),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: kTextPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: const TextStyle(
-                            fontSize: 12, color: kTextSecondary)),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 12, color: kTextSecondary),
+                    ),
                   ],
                 ),
               ),
@@ -1063,8 +1173,7 @@ class _DangerButtonState extends State<_DangerButton> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: _hovered
                 ? kDanger.withValues(alpha: 0.15)
@@ -1139,6 +1248,124 @@ class _ActionButtonState extends State<_ActionButton> {
               fontWeight: FontWeight.w600,
               color: c,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Self-previewing theme card. The mini preview uses the candidate theme's own
+// colours (spec.*) while the card chrome uses the active theme (k* getters).
+
+class _ThemeSwatchCard extends StatelessWidget {
+  final ThemeSpec spec;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _ThemeSwatchCard({
+    required this.spec,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 172,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: kSurface2Color,
+            borderRadius: BorderRadius.circular(kRadius + 2),
+            border: Border.all(
+              color: selected ? accent : kBorderColor,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mini app preview in the candidate theme's palette.
+              Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: spec.bg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: spec.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 22,
+                      margin: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: spec.surface,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: spec.border),
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 6,
+                            width: 64,
+                            decoration: BoxDecoration(
+                              color: spec.textPrimary.withValues(alpha: 0.75),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            height: 6,
+                            width: 38,
+                            decoration: BoxDecoration(
+                              color: spec.brandAccent,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      spec.name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: kTextPrimary,
+                      ),
+                    ),
+                  ),
+                  if (selected)
+                    Icon(Icons.check_circle_rounded, size: 16, color: accent),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                spec.tagline,
+                style: TextStyle(fontSize: 10.5, color: kTextSecondary),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),

@@ -9,6 +9,7 @@ import '../../core/services/gh_auth_service.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../../core/theme/theme_spec.dart';
 import '../updater/update_model.dart';
 import '../updater/update_notifier.dart';
 import '../admin/admin_screen.dart';
@@ -27,13 +28,17 @@ import '../settings/settings_screen.dart';
 final activeTabProvider = StateProvider<AppTab>((ref) {
   final settings = ref.read(settingsProvider);
   if (settings.tabOrder != null && settings.tabOrder!.isNotEmpty) {
-    return AppTab.values[settings.tabOrder!.first.clamp(0, AppTab.settings.index)];
+    return AppTab.values[settings.tabOrder!.first.clamp(
+      0,
+      AppTab.settings.index,
+    )];
   }
   return AppTab.catalog;
 });
 
 final ghAuthProvider = FutureProvider<bool>(
-    (ref) => GhAuthService().isAuthorized());
+  (ref) => GhAuthService().isAuthorized(),
+);
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -66,7 +71,7 @@ class _AppShellState extends ConsumerState<AppShell>
     )..value = 1.0;
 
     final curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _enterFade  = curved;
+    _enterFade = curved;
     _enterSlide = Tween<Offset>(
       begin: const Offset(0, 0.055),
       end: Offset.zero,
@@ -103,7 +108,9 @@ class _AppShellState extends ConsumerState<AppShell>
   void dispose() {
     windowManager.removeListener(this);
     _ctrl.dispose();
-    for (final t in _toasts) { t.timer.cancel(); }
+    for (final t in _toasts) {
+      t.timer.cancel();
+    }
     super.dispose();
   }
 
@@ -117,24 +124,42 @@ class _AppShellState extends ConsumerState<AppShell>
 
   // ── WindowListener no-ops ───────────────────────────────────────────────
 
-  @override void onWindowResize() {}
-  @override void onWindowResized() {}
-  @override void onWindowMove() {}
-  @override void onWindowMoved() {}
-  @override void onWindowEvent(String eventName) {}
-  @override void onWindowFocus() {}
-  @override void onWindowBlur() {}
-  @override void onWindowMinimize() {}
-  @override void onWindowRestore() {}
-  @override void onWindowEnterFullScreen() {}
-  @override void onWindowLeaveFullScreen() {}
-  @override void onWindowClose() {}
-  @override void onWindowDocked() {}
-  @override void onWindowUndocked() {}
+  @override
+  void onWindowResize() {}
+  @override
+  void onWindowResized() {}
+  @override
+  void onWindowMove() {}
+  @override
+  void onWindowMoved() {}
+  @override
+  void onWindowEvent(String eventName) {}
+  @override
+  void onWindowFocus() {}
+  @override
+  void onWindowBlur() {}
+  @override
+  void onWindowMinimize() {}
+  @override
+  void onWindowRestore() {}
+  @override
+  void onWindowEnterFullScreen() {}
+  @override
+  void onWindowLeaveFullScreen() {}
+  @override
+  void onWindowClose() {}
+  @override
+  void onWindowDocked() {}
+  @override
+  void onWindowUndocked() {}
 
   // ── Dialog & styles ─────────────────────────────────────────────────────
 
-  void _showUpdateDialog(BuildContext context, UpdateInfo info, TabPalette palette) {
+  void _showUpdateDialog(
+    BuildContext context,
+    UpdateInfo info,
+    TabPalette palette,
+  ) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -149,16 +174,32 @@ class _AppShellState extends ConsumerState<AppShell>
                 color: palette.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.system_update_rounded, color: palette.primary, size: 20),
+              child: Icon(
+                Icons.system_update_rounded,
+                color: palette.primary,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Update available',
-                    style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-                Text('v${info.version} is ready to download',
-                    style: const TextStyle(color: kTextSecondary, fontSize: 12, fontWeight: FontWeight.normal)),
+                Text(
+                  'Update available',
+                  style: TextStyle(
+                    color: kTextPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'v${info.version} is ready to download',
+                  style: TextStyle(
+                    color: kTextSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
               ],
             ),
           ],
@@ -170,8 +211,15 @@ class _AppShellState extends ConsumerState<AppShell>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("What's new",
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: palette.primary, letterSpacing: 0.8)),
+                    Text(
+                      "What's new",
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: palette.primary,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 200),
@@ -192,7 +240,7 @@ class _AppShellState extends ConsumerState<AppShell>
               Navigator.pop(ctx);
               ref.read(updateProvider.notifier).dismiss();
             },
-            child: const Text('Later', style: TextStyle(color: kTextMuted)),
+            child: Text('Later', style: TextStyle(color: kTextMuted)),
           ),
           TextButton(
             onPressed: () {
@@ -201,8 +249,13 @@ class _AppShellState extends ConsumerState<AppShell>
               ref.read(updateProvider.notifier).downloadUpdate();
             },
             style: TextButton.styleFrom(foregroundColor: palette.primary),
-            child: Text('Update Now',
-                style: TextStyle(color: palette.primary, fontWeight: FontWeight.w600)),
+            child: Text(
+              'Update Now',
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -210,33 +263,45 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   MarkdownStyleSheet _mdStyle(TabPalette palette) => MarkdownStyleSheet(
-        p: const TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
-        h1: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: palette.primary),
-        h2: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: palette.primary),
-        h3: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kTextPrimary),
-        strong: const TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary),
-        em: const TextStyle(fontStyle: FontStyle.italic, color: kTextSecondary),
-        code: const TextStyle(fontSize: 11, color: kTextPrimary, fontFamily: 'monospace'),
-        codeblockDecoration: BoxDecoration(
-          color: kSurface2Color,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        blockquoteDecoration: BoxDecoration(
-          border: Border(left: BorderSide(color: palette.primary, width: 3)),
-        ),
-        listBullet: const TextStyle(fontSize: 12, color: kTextSecondary),
-        horizontalRuleDecoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: kBorderColor)),
-        ),
-      );
+    p: TextStyle(fontSize: 12, color: kTextSecondary, height: 1.6),
+    h1: TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.w700,
+      color: palette.primary,
+    ),
+    h2: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: palette.primary,
+    ),
+    h3: TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: kTextPrimary,
+    ),
+    strong: TextStyle(fontWeight: FontWeight.w600, color: kTextPrimary),
+    em: TextStyle(fontStyle: FontStyle.italic, color: kTextSecondary),
+    code: TextStyle(fontSize: 11, color: kTextPrimary, fontFamily: 'monospace'),
+    codeblockDecoration: BoxDecoration(
+      color: kSurface2Color,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    blockquoteDecoration: BoxDecoration(
+      border: Border(left: BorderSide(color: palette.primary, width: 3)),
+    ),
+    listBullet: TextStyle(fontSize: 12, color: kTextSecondary),
+    horizontalRuleDecoration: BoxDecoration(
+      border: Border(top: BorderSide(color: kBorderColor)),
+    ),
+  );
 
   Widget _screenFor(AppTab tab) => switch (tab) {
-    AppTab.encode   => const EncodeScreen(),
-    AppTab.decode   => const DecodeScreen(),
-    AppTab.player   => const PlayerScreen(),
-    AppTab.catalog  => const CatalogScreen(),
+    AppTab.encode => const EncodeScreen(),
+    AppTab.decode => const DecodeScreen(),
+    AppTab.player => const PlayerScreen(),
+    AppTab.catalog => const CatalogScreen(),
     AppTab.settings => const SettingsScreen(),
-    AppTab.admin    => const AdminScreen(),
+    AppTab.admin => const AdminScreen(),
   };
 
   @override
@@ -283,7 +348,11 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(downloadProvider, (prev, next) {
       if (prev is! DownloadDone && next is DownloadDone) {
         if (ref.read(activeTabProvider) != AppTab.catalog) {
-          _addToast('Download complete', AppTab.catalog.palette, AppTab.catalog);
+          _addToast(
+            'Download complete',
+            AppTab.catalog.palette,
+            AppTab.catalog,
+          );
         }
       }
     });
@@ -309,55 +378,75 @@ class _AppShellState extends ConsumerState<AppShell>
                       if (!isFullscreen)
                         _Sidebar(activeTab: activeTab, palette: palette),
                       Expanded(
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          color: palette.surface,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: AppTab.values.map((tab) {
-                              final isActive  = tab == activeTab;
-                              final isExiting = tab == _exitingTab;
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              decoration: BoxDecoration(
+                                color: activeSpec.gradientBg == null
+                                    ? palette.surface
+                                    : null,
+                                gradient: activeSpec.gradientBg == null
+                                    ? null
+                                    : LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: activeSpec.gradientBg!,
+                                      ),
+                              ),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: AppTab.values.map((tab) {
+                                  final isActive = tab == activeTab;
+                                  final isExiting = tab == _exitingTab;
 
-                              if (!isActive && !isExiting) {
-                                // Player keeps tickers so audio continues off-tab;
-                                // all other tabs are fully frozen.
-                                return Offstage(
-                                  offstage: true,
-                                  child: tab == AppTab.player
-                                      ? _screenFor(tab)
-                                      : TickerMode(
-                                          enabled: false,
-                                          child: _screenFor(tab),
+                                  if (!isActive && !isExiting) {
+                                    // Player keeps tickers so audio continues off-tab;
+                                    // all other tabs are fully frozen.
+                                    return Offstage(
+                                      offstage: true,
+                                      child: tab == AppTab.player
+                                          ? _screenFor(tab)
+                                          : TickerMode(
+                                              enabled: false,
+                                              child: _screenFor(tab),
+                                            ),
+                                    );
+                                  }
+
+                                  if (isActive) {
+                                    return AnimatedBuilder(
+                                      animation: _ctrl,
+                                      builder: (_, child) => FadeTransition(
+                                        opacity: _enterFade,
+                                        child: SlideTransition(
+                                          position: _enterSlide,
+                                          child: child,
                                         ),
-                                );
-                              }
+                                      ),
+                                      child: _screenFor(tab),
+                                    );
+                                  }
 
-                              if (isActive) {
-                                return AnimatedBuilder(
-                                  animation: _ctrl,
-                                  builder: (_, child) => FadeTransition(
-                                    opacity: _enterFade,
-                                    child: SlideTransition(
-                                      position: _enterSlide,
-                                      child: child,
+                                  return IgnorePointer(
+                                    child: AnimatedBuilder(
+                                      animation: _ctrl,
+                                      builder: (_, child) => FadeTransition(
+                                        opacity: _exitFade,
+                                        child: child,
+                                      ),
+                                      child: _screenFor(tab),
                                     ),
-                                  ),
-                                  child: _screenFor(tab),
-                                );
-                              }
-
-                              return IgnorePointer(
-                                child: AnimatedBuilder(
-                                  animation: _ctrl,
-                                  builder: (_, child) => FadeTransition(
-                                    opacity: _exitFade,
-                                    child: child,
-                                  ),
-                                  child: _screenFor(tab),
-                                ),
-                              );
-                            }).toList(),
-                          ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            if (activeSpec.scanlines)
+                              const Positioned.fill(
+                                child: IgnorePointer(child: _ScanlineOverlay()),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -371,18 +460,27 @@ class _AppShellState extends ConsumerState<AppShell>
                 right: 16,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: _toasts.map((t) => _ToastCard(
-                    toast: t,
-                    onTap: () {
-                      t.timer.cancel();
-                      setState(() => _toasts.removeWhere((e) => e.id == t.id));
-                      ref.read(activeTabProvider.notifier).state = t.target;
-                    },
-                    onDismiss: () {
-                      t.timer.cancel();
-                      setState(() => _toasts.removeWhere((e) => e.id == t.id));
-                    },
-                  )).toList(),
+                  children: _toasts
+                      .map(
+                        (t) => _ToastCard(
+                          toast: t,
+                          onTap: () {
+                            t.timer.cancel();
+                            setState(
+                              () => _toasts.removeWhere((e) => e.id == t.id),
+                            );
+                            ref.read(activeTabProvider.notifier).state =
+                                t.target;
+                          },
+                          onDismiss: () {
+                            t.timer.cancel();
+                            setState(
+                              () => _toasts.removeWhere((e) => e.id == t.id),
+                            );
+                          },
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
           ],
@@ -431,9 +529,7 @@ class _TitleBar extends ConsumerWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: palette.primary,
-                boxShadow: [
-                  BoxShadow(color: palette.glow, blurRadius: 8),
-                ],
+                boxShadow: [BoxShadow(color: palette.glow, blurRadius: 8)],
               ),
             ),
             const SizedBox(width: 10),
@@ -515,31 +611,36 @@ class _WindowButtonState extends State<_WindowButton> {
       preferBelow: true,
       waitDuration: const Duration(milliseconds: 600),
       child: MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() { _hovered = false; _pressed = false; }),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          width: 46,
-          height: 48,
-          color: _hovered
-              ? (widget.isClose
-                  ? const Color(0xFFE81123).withValues(alpha: _pressed ? 1.0 : 0.85)
-                  : kSurface2Color)
-              : Colors.transparent,
-          child: AnimatedScale(
-            scale: _pressed ? 0.88 : 1.0,
-            duration: const Duration(milliseconds: 80),
-            child: Icon(widget.icon, size: 16, color: kTextSecondary),
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() {
+          _hovered = false;
+          _pressed = false;
+        }),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapUp: (_) => setState(() => _pressed = false),
+          onTapCancel: () => setState(() => _pressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 46,
+            height: 48,
+            color: _hovered
+                ? (widget.isClose
+                      ? const Color(
+                          0xFFE81123,
+                        ).withValues(alpha: _pressed ? 1.0 : 0.85)
+                      : kSurface2Color)
+                : Colors.transparent,
+            child: AnimatedScale(
+              scale: _pressed ? 0.88 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: Icon(widget.icon, size: 16, color: kTextSecondary),
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }
@@ -565,8 +666,11 @@ class _SidebarState extends ConsumerState<_Sidebar> {
     (AppTab.settings, Icons.settings_rounded, 'Settings'),
   ];
 
-  static const _adminItem =
-      (AppTab.admin, Icons.admin_panel_settings_rounded, 'Admin');
+  static const _adminItem = (
+    AppTab.admin,
+    Icons.admin_panel_settings_rounded,
+    'Admin',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -616,18 +720,20 @@ class _SidebarState extends ConsumerState<_Sidebar> {
               label: item.$3,
               isActive: widget.activeTab == item.$1,
               isHovered: _hovered == item.$1,
-              isRunning: (item.$1 == AppTab.encode && encodeRunning) ||
+              isRunning:
+                  (item.$1 == AppTab.encode && encodeRunning) ||
                   (item.$1 == AppTab.decode && decodeRunning) ||
                   (item.$1 == AppTab.player && playerPlaying),
-              hasBadge: item.$1 == AppTab.settings &&
+              hasBadge:
+                  item.$1 == AppTab.settings &&
                   (updateStatus == UpdateStatus.available ||
-                   updateStatus == UpdateStatus.downloading ||
-                   updateStatus == UpdateStatus.readyToInstall),
-              palette: widget.activeTab == item.$1 ? widget.palette : item.$1.palette,
-              onTap: () =>
-                  ref.read(activeTabProvider.notifier).state = item.$1,
-              onHover: (v) =>
-                  setState(() => _hovered = v ? item.$1 : null),
+                      updateStatus == UpdateStatus.downloading ||
+                      updateStatus == UpdateStatus.readyToInstall),
+              palette: widget.activeTab == item.$1
+                  ? widget.palette
+                  : item.$1.palette,
+              onTap: () => ref.read(activeTabProvider.notifier).state = item.$1,
+              onHover: (v) => setState(() => _hovered = v ? item.$1 : null),
             ),
         ],
       ),
@@ -665,96 +771,99 @@ class _SidebarItem extends StatelessWidget {
     final color = isActive
         ? palette.primary
         : isHovered
-            ? palette.primary.withValues(alpha: 0.7)
-            : kTextMuted;
+        ? palette.primary.withValues(alpha: 0.7)
+        : kTextMuted;
 
     return Tooltip(
       message: label,
       preferBelow: false,
       waitDuration: const Duration(milliseconds: 800),
       child: MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => onHover(true),
-      onExit: (_) => onHover(false),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: isActive
-                ? palette.primary.withValues(alpha: 0.1)
-                : Colors.transparent,
-            border: Border(
-              left: BorderSide(
-                color: isActive ? palette.primary : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: isActive
-                          ? [BoxShadow(color: palette.glow, blurRadius: 10)]
-                          : [],
-                    ),
-                    child: Icon(icon, color: color, size: 22),
-                  ),
-                  if (isRunning)
-                    Positioned(
-                      top: 2,
-                      right: 2,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: palette.primary,
-                          boxShadow: [
-                            BoxShadow(color: palette.glow, blurRadius: 4)
-                          ],
-                        ),
-                      )
-                          .animate(onPlay: (c) => c.repeat(reverse: true))
-                          .fade(begin: 0.3, end: 1.0, duration: 600.ms),
-                    ),
-                  if (hasBadge)
-                    Positioned(
-                      top: -1,
-                      right: -1,
-                      child: Icon(
-                        Icons.download_rounded,
-                        size: 15,
-                        color: palette.primary,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: color,
-                  fontWeight:
-                      isActive ? FontWeight.w600 : FontWeight.normal,
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => onHover(true),
+        onExit: (_) => onHover(false),
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? palette.primary.withValues(alpha: 0.1)
+                  : Colors.transparent,
+              border: Border(
+                left: BorderSide(
+                  color: isActive ? palette.primary : Colors.transparent,
+                  width: 3,
                 ),
               ),
-            ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: isActive
+                            ? [BoxShadow(color: palette.glow, blurRadius: 10)]
+                            : [],
+                      ),
+                      child: Icon(icon, color: color, size: 22),
+                    ),
+                    if (isRunning)
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child:
+                            Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: palette.primary,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: palette.glow,
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                                .animate(onPlay: (c) => c.repeat(reverse: true))
+                                .fade(begin: 0.3, end: 1.0, duration: 600.ms),
+                      ),
+                    if (hasBadge)
+                      Positioned(
+                        top: -1,
+                        right: -1,
+                        child: Icon(
+                          Icons.download_rounded,
+                          size: 15,
+                          color: palette.primary,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: color,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }
@@ -793,60 +902,101 @@ class _ToastCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 240,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: kSurfaceColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: toast.palette.primary.withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4)),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: toast.palette.primary.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.check_rounded,
-                      color: toast.palette.primary, size: 14),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: onTap,
+              child: Container(
+                width: 240,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    toast.message,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: kTextPrimary,
-                        fontWeight: FontWeight.w500),
+                decoration: BoxDecoration(
+                  color: kSurfaceColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: toast.palette.primary.withValues(alpha: 0.4),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onDismiss,
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.close_rounded, color: kTextMuted, size: 14),
-                  ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: toast.palette.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.check_rounded,
+                        color: toast.palette.primary,
+                        size: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        toast.message,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: kTextPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onDismiss,
+                      child: Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: kTextMuted,
+                          size: 14,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-    ).animate().fadeIn(duration: 180.ms).slideX(begin: 0.25, end: 0, duration: 180.ms);
+        )
+        .animate()
+        .fadeIn(duration: 180.ms)
+        .slideX(begin: 0.25, end: 0, duration: 180.ms);
   }
+}
+
+// ── Scanline overlay (Phosphor / CRT themes) ────────────────────────────────
+
+class _ScanlineOverlay extends StatelessWidget {
+  const _ScanlineOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _ScanlinePainter());
+  }
+}
+
+class _ScanlinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.black.withValues(alpha: 0.16);
+    const gap = 3.0;
+    for (double y = 0; y < size.height; y += gap) {
+      canvas.drawRect(Rect.fromLTWH(0, y, size.width, 1), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -505,16 +505,16 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
                 builder: (ctx) => AlertDialog(
                   backgroundColor: kSurfaceColor,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  title: const Text('Already Downloaded',
+                  title: Text('Already Downloaded',
                       style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-                  content: const Text(
+                  content: Text(
                     'This video is already in your downloads. Downloading again will overwrite the existing file.',
                     style: TextStyle(color: kTextSecondary, fontSize: 13),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel', style: TextStyle(color: kTextMuted)),
+                      child: Text('Cancel', style: TextStyle(color: kTextMuted)),
                     ),
                     TextButton(
                       onPressed: () {
@@ -1305,13 +1305,13 @@ class _DoneDownload extends StatelessWidget {
                   filename,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: kTextSecondary),
+                  style: TextStyle(fontSize: 12, color: kTextSecondary),
                 ),
                 Text(
                   folder,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: kTextMuted),
+                  style: TextStyle(fontSize: 11, color: kTextMuted),
                 ),
               ],
             ),
@@ -1356,7 +1356,7 @@ class _ErrorDownload extends StatelessWidget {
         const Icon(Icons.error_outline_rounded, size: 18, color: Colors.redAccent),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(message, maxLines: 2, style: const TextStyle(fontSize: 12, color: kTextSecondary)),
+          child: Text(message, maxLines: 2, style: TextStyle(fontSize: 12, color: kTextSecondary)),
         ),
         const SizedBox(width: 12),
         TextButton(
@@ -1675,7 +1675,7 @@ class _DownloadRecordRow extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: kTextMuted),
+              icon: Icon(Icons.delete_outline_rounded, color: kTextMuted),
               iconSize: iconSize,
               tooltip: 'Delete file',
               onPressed: () => showDialog(
@@ -1684,7 +1684,7 @@ class _DownloadRecordRow extends StatelessWidget {
                   backgroundColor: kSurfaceColor,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
-                  title: const Text('Delete download?',
+                  title: Text('Delete download?',
                       style: TextStyle(
                           color: kTextPrimary,
                           fontSize: 15,
@@ -1693,13 +1693,13 @@ class _DownloadRecordRow extends StatelessWidget {
                     decodedVideoPath != null
                         ? 'This will permanently delete the decoded video folder and remove this entry from your download history.'
                         : 'This will permanently delete the file from disk and remove it from your download history.',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: kTextSecondary, fontSize: 13),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel',
+                      child: Text('Cancel',
                           style: TextStyle(color: kTextMuted)),
                     ),
                     TextButton(
@@ -2311,13 +2311,13 @@ class _SeriesEmptyState extends StatelessWidget {
                   duration: 1800.ms,
                   curve: Curves.easeInOut),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'No series yet',
             style: TextStyle(
                 fontSize: 16, fontWeight: FontWeight.w600, color: kTextPrimary),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Add a "Series" tab to your spreadsheet to get started.',
             style: TextStyle(fontSize: 13, color: kTextMuted),
           ),
@@ -2693,7 +2693,7 @@ class _PreviewCard extends StatelessWidget {
               children: [
                 Text(
                   state.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: kTextPrimary),
@@ -2723,7 +2723,7 @@ class _PreviewCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: kBorderColor),
         ),
-        child: const Icon(Icons.movie_rounded, size: 24, color: kTextMuted),
+        child: Icon(Icons.movie_rounded, size: 24, color: kTextMuted),
       );
 }
 
@@ -2782,7 +2782,7 @@ class _Chip extends StatelessWidget {
         border: Border.all(color: kBorderColor),
       ),
       child: Text(label,
-          style: const TextStyle(fontSize: 10, color: kTextSecondary)),
+          style: TextStyle(fontSize: 10, color: kTextSecondary)),
     );
   }
 }

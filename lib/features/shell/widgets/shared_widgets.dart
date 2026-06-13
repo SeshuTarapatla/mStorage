@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/theme_spec.dart';
 
 class SectionHeader extends StatelessWidget {
   final IconData icon;
@@ -23,10 +25,15 @@ class SectionHeader extends StatelessWidget {
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 16)
-            ],
+            borderRadius: BorderRadius.circular(kRadius + 2),
+            boxShadow: activeSpec.hasGlow
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.2),
+                      blurRadius: 16,
+                    ),
+                  ]
+                : null,
           ),
           child: Icon(icon, color: color, size: 24),
         ),
@@ -34,14 +41,19 @@ class SectionHeader extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: kTextPrimary)),
-            Text(subtitle,
-                style:
-                    const TextStyle(fontSize: 13, color: kTextSecondary)),
+            Text(
+              title,
+              style: GoogleFonts.getFont(
+                activeSpec.headingFont,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: kTextPrimary,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 13, color: kTextSecondary),
+            ),
           ],
         ),
       ],
@@ -71,10 +83,8 @@ class SmallButton extends StatelessWidget {
       label: Text(label, style: TextStyle(color: color, fontSize: 13)),
       style: TextButton.styleFrom(
         backgroundColor: color.withValues(alpha: 0.1),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -96,13 +106,17 @@ class ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded,
-              color: Color(0xFFF87171), size: 18),
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFF87171),
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(message,
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFFFCA5A5))),
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 13, color: Color(0xFFFCA5A5)),
+            ),
           ),
         ],
       ),
@@ -193,14 +207,13 @@ class OutDirRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCustom = onClear != null;  // user-picked dir, not auto-computed
+    final isCustom = onClear != null; // user-picked dir, not auto-computed
     final hasContent = dir.isNotEmpty;
     return Row(
       children: [
         Expanded(
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
               color: kSurface2Color,
               borderRadius: BorderRadius.circular(10),
@@ -212,8 +225,11 @@ class OutDirRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.folder_outlined,
-                    color: isCustom ? accentColor : kTextMuted, size: 18),
+                Icon(
+                  Icons.folder_outlined,
+                  color: isCustom ? accentColor : kTextMuted,
+                  size: 18,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -230,10 +246,13 @@ class OutDirRow extends StatelessWidget {
                     cursor: SystemMouseCursors.click,
                     child: GestureDetector(
                       onTap: onClear,
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.only(left: 8),
-                        child: Icon(Icons.close_rounded,
-                            size: 15, color: kTextMuted),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: kTextMuted,
+                        ),
                       ),
                     ),
                   ),
