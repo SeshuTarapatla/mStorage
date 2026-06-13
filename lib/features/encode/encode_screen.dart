@@ -470,7 +470,7 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      style: const TextStyle(fontSize: 14, color: kTextPrimary),
+      style: TextStyle(fontSize: 14, color: kTextPrimary),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -595,7 +595,7 @@ class _DoneBanner extends StatelessWidget {
                     style: TextStyle(
                         fontWeight: FontWeight.w600, color: accentColor)),
                 Text(outputPath,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: kTextSecondary),
                     overflow: TextOverflow.ellipsis),
               ],

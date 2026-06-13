@@ -419,7 +419,7 @@ class _DecodeDoneBanner extends StatelessWidget {
                     style: TextStyle(
                         fontWeight: FontWeight.w600, color: accentColor)),
                 Text(outputDir,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: kTextSecondary),
                     overflow: TextOverflow.ellipsis),
               ],

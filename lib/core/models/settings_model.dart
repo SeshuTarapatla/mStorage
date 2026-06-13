@@ -12,6 +12,7 @@ class AppSettings {
   final List<int>? tabOrder;
   final bool deleteAfterDecode;
   final double playerVolume;
+  final String themeId;
 
   const AppSettings({
     this.password = '',
@@ -27,6 +28,7 @@ class AppSettings {
     this.tabOrder,
     this.deleteAfterDecode = false,
     this.playerVolume = 100.0,
+    this.themeId = 'spectrum',
   });
 
   AppSettings copyWith({
@@ -43,6 +45,7 @@ class AppSettings {
     List<int>? tabOrder,
     bool? deleteAfterDecode,
     double? playerVolume,
+    String? themeId,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -61,6 +64,7 @@ class AppSettings {
       tabOrder: tabOrder ?? this.tabOrder,
       deleteAfterDecode: deleteAfterDecode ?? this.deleteAfterDecode,
       playerVolume: playerVolume ?? this.playerVolume,
+      themeId: themeId ?? this.themeId,
     );
   }
 }

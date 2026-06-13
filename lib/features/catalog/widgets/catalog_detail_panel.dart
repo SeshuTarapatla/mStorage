@@ -98,7 +98,7 @@ class CatalogDetailPanel extends StatelessWidget {
                       label: const Text('View & Download'),
                       style: FilledButton.styleFrom(
                         backgroundColor: palette.primary,
-                        foregroundColor: Colors.black,
+                        foregroundColor: onAccentColor(palette.primary),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),

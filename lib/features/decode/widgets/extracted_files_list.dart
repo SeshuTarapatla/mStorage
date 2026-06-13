@@ -27,7 +27,7 @@ class ExtractedFilesList extends StatelessWidget {
       children: [
         Text(
           'Extracted files (${files.length})',
-          style: const TextStyle(
+          style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: kTextSecondary),
@@ -111,12 +111,12 @@ class _FileRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(name,
-                    style: const TextStyle(fontSize: 13, color: kTextPrimary),
+                    style: TextStyle(fontSize: 13, color: kTextPrimary),
                     overflow: TextOverflow.ellipsis),
                 if (size.isNotEmpty)
                   Text(size,
                       style:
-                          const TextStyle(fontSize: 11, color: kTextMuted)),
+                          TextStyle(fontSize: 11, color: kTextMuted)),
               ],
             ),
           ),

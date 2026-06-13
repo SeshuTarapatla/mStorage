@@ -167,10 +167,10 @@ class _FileDropZoneState extends State<FileDropZone> {
                       hasFile
                           ? (sizeLabel.isNotEmpty ? sizeLabel : 'Click to change')
                           : widget.hint,
-                      style: const TextStyle(fontSize: 12, color: kTextMuted),
+                      style: TextStyle(fontSize: 12, color: kTextMuted),
                     ),
                     if (hasFile && sizeLabel.isNotEmpty)
-                      const Text(
+                      Text(
                         'Click to change',
                         style: TextStyle(fontSize: 11, color: kTextMuted),
                       ),
@@ -198,7 +198,7 @@ class _FileDropZoneState extends State<FileDropZone> {
                   color: kSurface2Color,
                   border: Border.all(color: kBorderColor),
                 ),
-                child: const Icon(Icons.close_rounded,
+                child: Icon(Icons.close_rounded,
                     size: 13, color: kTextMuted),
               ),
             ),
