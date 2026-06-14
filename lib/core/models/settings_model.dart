@@ -13,6 +13,7 @@ class AppSettings {
   final bool deleteAfterDecode;
   final double playerVolume;
   final String themeId;
+  final String syncplayPath;
 
   const AppSettings({
     this.password = '',
@@ -29,6 +30,7 @@ class AppSettings {
     this.deleteAfterDecode = false,
     this.playerVolume = 100.0,
     this.themeId = 'spectrum',
+    this.syncplayPath = '',
   });
 
   AppSettings copyWith({
@@ -46,6 +48,7 @@ class AppSettings {
     bool? deleteAfterDecode,
     double? playerVolume,
     String? themeId,
+    String? syncplayPath,
   }) {
     return AppSettings(
       password: password ?? this.password,
@@ -65,6 +68,7 @@ class AppSettings {
       deleteAfterDecode: deleteAfterDecode ?? this.deleteAfterDecode,
       playerVolume: playerVolume ?? this.playerVolume,
       themeId: themeId ?? this.themeId,
+      syncplayPath: syncplayPath ?? this.syncplayPath,
     );
   }
 }

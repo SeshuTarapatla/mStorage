@@ -31,6 +31,7 @@ const _kTabOrder = 'tab_order';
 const _kDeleteAfterDecode = 'setting_delete_after_decode';
 const _kPlayerVolume = 'player_volume';
 const _kThemeId = 'setting_theme_id';
+const _kSyncplayPath = 'syncplay_exe_path';
 
 class SettingsNotifier extends Notifier<AppSettings> {
   late SharedPreferences _prefs;
@@ -59,8 +60,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
       deleteAfterDecode: _prefs.getBool(_kDeleteAfterDecode) ?? false,
       playerVolume: _prefs.getDouble(_kPlayerVolume) ?? 100.0,
       themeId: _prefs.getString(_kThemeId) ?? 'spectrum',
+      syncplayPath: _prefs.getString(_kSyncplayPath) ?? '',
     );
     applyThemeGlobals(appThemeIdFromString(state.themeId));
+  }
+
+  Future<void> setSyncplayPath(String value) async {
+    state = state.copyWith(syncplayPath: value);
+    await _prefs.setString(_kSyncplayPath, value);
   }
 
   Future<void> setThemeId(AppThemeId id) async {
@@ -151,6 +158,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       deleteAfterDecode: state.deleteAfterDecode,
       playerVolume: state.playerVolume,
       themeId: state.themeId,
+      syncplayPath: state.syncplayPath,
     );
   }
 

@@ -176,7 +176,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return false;
   }
 
-  void _checkSyncplay() {
+  void _checkSyncplay({String? userPath}) {
+    // User-chosen path takes priority over all auto-detect locations.
+    final custom = userPath ?? ref.read(settingsProvider).syncplayPath;
+    if (custom.isNotEmpty && File(custom).existsSync()) {
+      setState(() { _syncplayFound = true; _syncplayPath = custom; });
+      return;
+    }
     final appDir = p.dirname(Platform.resolvedExecutable);
     final paths = [
       p.join(appDir, 'syncplay', 'SyncplayConsole.exe'),
@@ -189,6 +195,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         return;
       }
     }
+    setState(() { _syncplayFound = false; _syncplayPath = null; });
   }
 
   void _checkVlc() {
@@ -378,6 +385,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         _openVideo(path);
       }
     });
+
+
+    // Re-run detection when the user picks or clears a custom Syncplay path.
+    ref.listen<String>(
+      settingsProvider.select((s) => s.syncplayPath),
+      (_, path) => _checkSyncplay(userPath: path),
+    );
 
     // Pause automatically when leaving the Player tab.
     ref.listen<AppTab>(activeTabProvider, (prev, next) {
