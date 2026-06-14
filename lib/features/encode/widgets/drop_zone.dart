@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -68,18 +69,34 @@ class _FileDropZoneState extends State<FileDropZone> {
 
     return Stack(
       children: [
-        DropTarget(
-          onDragEntered: (_) => setState(() => _isDragging = true),
-          onDragExited: (_) => setState(() => _isDragging = false),
-          onDragDone: (details) {
+        DropRegion(
+          formats: const [Formats.fileUri],
+          hitTestBehavior: HitTestBehavior.opaque,
+          onDropOver: (event) =>
+              event.session.allowedOperations.contains(DropOperation.copy)
+                  ? DropOperation.copy
+                  : DropOperation.none,
+          onDropEnter: (_) => setState(() => _isDragging = true),
+          onDropLeave: (_) => setState(() => _isDragging = false),
+          onPerformDrop: (event) async {
             setState(() => _isDragging = false);
-            final files = details.files;
-            if (files.isEmpty) return;
-            if (files.length > 1 && widget.onMultiFileDrop != null) {
-              widget.onMultiFileDrop!(files.map((f) => f.path).toList());
+            final paths = <String>[];
+            for (final item in event.session.items) {
+              final reader = item.dataReader;
+              if (reader == null || !reader.canProvide(Formats.fileUri)) continue;
+              final c = Completer<String?>();
+              reader.getValue<Uri>(Formats.fileUri,
+                  (uri) => c.complete(uri?.toFilePath()),
+                  onError: (_) => c.complete(null));
+              final path = await c.future;
+              if (path != null) paths.add(path);
+            }
+            if (paths.isEmpty) return;
+            if (paths.length > 1 && widget.onMultiFileDrop != null) {
+              widget.onMultiFileDrop!(paths);
               return;
             }
-            final path = files.first.path;
+            final path = paths.first;
             final ext = path.split('.').last.toLowerCase();
             if (widget.allowedExtensions.isEmpty ||
                 widget.allowedExtensions.contains(ext)) {
