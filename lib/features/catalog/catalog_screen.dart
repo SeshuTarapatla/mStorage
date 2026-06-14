@@ -592,6 +592,14 @@ class _TopBar extends StatelessWidget {
                 ),
         ),
         const SizedBox(width: 10),
+        if (showDownloads) ...[
+          _IconBtn(
+            icon: Icons.open_in_new_rounded,
+            tooltip: 'Open downloads folder',
+            onTap: onOpenFolder,
+          ),
+          const SizedBox(width: 6),
+        ],
         // Downloads history toggle (badge shows count when there are records).
         _DownloadsToggleBtn(
           active: showDownloads,
@@ -599,14 +607,6 @@ class _TopBar extends StatelessWidget {
           palette: palette,
           onTap: onToggleDownloads,
         ),
-        if (showDownloads) ...[
-          const SizedBox(width: 6),
-          _IconBtn(
-            icon: Icons.folder_open_rounded,
-            tooltip: 'Open downloads folder',
-            onTap: onOpenFolder,
-          ),
-        ],
         if (sheetUrl != null) ...[
           const SizedBox(width: 6),
           _IconBtn(
