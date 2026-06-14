@@ -720,6 +720,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // ── Syncplay ─────────────────────────────────────────────────────
+          _SettingsGroup(
+            label: 'Syncplay',
+            accent: accent,
+            children: [
+              _DirSettingRow(
+                icon: Icons.sync_rounded,
+                title: 'Syncplay Executable',
+                subtitle:
+                    'Pick SyncplayConsole.exe if Syncplay isn\'t installed in Program Files.',
+                accent: accent,
+                dir: settings.syncplayPath,
+                leadingIcon: Icons.terminal_rounded,
+                onPick: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['exe'],
+                    dialogTitle: 'Select SyncplayConsole.exe',
+                  );
+                  final path = result?.files.single.path;
+                  if (path != null) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setSyncplayPath(path);
+                  }
+                },
+                onClear: settings.syncplayPath.isEmpty
+                    ? null
+                    : () => ref
+                          .read(settingsProvider.notifier)
+                          .setSyncplayPath(''),
+                placeholder: 'Auto-detect from Program Files',
+              ),
+            ],
+          ).animate().fadeIn(duration: 300.ms, delay: 140.ms),
+
+          const SizedBox(height: 20),
+
           // ── Encode Options ───────────────────────────────────────────────
           _SettingsGroup(
             label: 'Encode Options',
@@ -1047,6 +1085,7 @@ class _DirSettingRow extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback? onClear;
   final String placeholder;
+  final IconData leadingIcon;
 
   const _DirSettingRow({
     required this.icon,
@@ -1057,6 +1096,7 @@ class _DirSettingRow extends StatelessWidget {
     required this.onPick,
     required this.onClear,
     required this.placeholder,
+    this.leadingIcon = Icons.folder_outlined,
   });
 
   @override
@@ -1099,6 +1139,7 @@ class _DirSettingRow extends StatelessWidget {
             onPick: onPick,
             onClear: onClear,
             placeholder: placeholder,
+            leadingIcon: leadingIcon,
           ),
         ],
       ),

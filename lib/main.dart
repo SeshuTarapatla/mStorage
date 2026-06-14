@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/services/settings_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_fonts.dart';
 import 'core/theme/theme_spec.dart';
 import 'features/shell/app_shell.dart';
 import 'features/updater/update_notifier.dart';
@@ -15,6 +16,10 @@ void main() async {
   // Load settings before building UI so activeTabProvider can read startupTab.
   final container = ProviderContainer();
   await container.read(settingsProvider.notifier).load();
+
+  // Preload all theme font families so switching never triggers an async
+  // font-load + relayout.  Non-blocking — first paint isn't delayed.
+  unawaited(preloadThemeFonts());
 
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(

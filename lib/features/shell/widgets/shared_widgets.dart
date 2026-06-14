@@ -195,6 +195,7 @@ class OutDirRow extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback? onClear;
   final String placeholder;
+  final IconData leadingIcon;
 
   const OutDirRow({
     super.key,
@@ -203,6 +204,7 @@ class OutDirRow extends StatelessWidget {
     required this.onPick,
     this.onClear,
     this.placeholder = 'Default: <video folder>/output/',
+    this.leadingIcon = Icons.folder_outlined,
   });
 
   @override
@@ -226,7 +228,7 @@ class OutDirRow extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  Icons.folder_outlined,
+                  leadingIcon,
                   color: isCustom ? accentColor : kTextMuted,
                   size: 18,
                 ),
