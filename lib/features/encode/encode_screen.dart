@@ -194,19 +194,24 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
         final proceed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text("Date is set to today"),
-            content: const Text(
+            backgroundColor: kDialogColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Text('Date is set to today',
+                style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+            content: Text(
               "The encode date matches today's date. Did you forget to update it?\n\n"
-              "Tap \"Encode anyway\" to continue, or go back and set the correct date.",
+              'Tap "Encode anyway" to continue, or go back and set the correct date.',
+              style: TextStyle(color: kTextSecondary, fontSize: 13),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Go back'),
+                child: Text('Go back', style: TextStyle(color: kTextMuted)),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Encode anyway'),
+                child: Text('Encode anyway',
+                    style: TextStyle(color: _palette.primary, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -229,16 +234,21 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
       final overwrite = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('File already exists'),
-          content: Text('"$title.mp4" already exists in the output folder. Overwrite?'),
+          backgroundColor: kSurfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Text('File already exists',
+              style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+          content: Text('"$title.mp4" already exists in the output folder. Overwrite?',
+              style: TextStyle(color: kTextSecondary, fontSize: 13)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: TextStyle(color: kTextMuted)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Overwrite'),
+              child: Text('Overwrite',
+                  style: TextStyle(color: _palette.primary, fontWeight: FontWeight.w600)),
             ),
           ],
         ),

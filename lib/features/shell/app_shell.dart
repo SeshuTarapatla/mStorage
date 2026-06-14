@@ -164,7 +164,7 @@ class _AppShellState extends ConsumerState<AppShell>
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceColor,
+        backgroundColor: kDialogColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
