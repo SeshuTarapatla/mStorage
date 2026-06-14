@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -436,10 +436,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // ── Normal mode ───────────────────────────────────────────────────────
-    return DropTarget(
-      onDragDone: (details) {
-        final path = details.files.first.path;
-        if (_isVideoFile(path)) _openVideo(path);
+    return DropRegion(
+      formats: const [Formats.fileUri],
+      hitTestBehavior: HitTestBehavior.opaque,
+      onDropOver: (event) =>
+          event.session.allowedOperations.contains(DropOperation.copy)
+              ? DropOperation.copy
+              : DropOperation.none,
+      onPerformDrop: (event) async {
+        final item = event.session.items.firstOrNull;
+        if (item == null) return;
+        final reader = item.dataReader;
+        if (reader == null || !reader.canProvide(Formats.fileUri)) return;
+        final c = Completer<String?>();
+        reader.getValue<Uri>(Formats.fileUri,
+            (uri) => c.complete(uri?.toFilePath()),
+            onError: (_) => c.complete(null));
+        final path = await c.future;
+        if (path != null && _isVideoFile(path)) _openVideo(path);
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -695,13 +709,27 @@ class _VideoAreaState extends State<_VideoArea> {
 
   @override
   Widget build(BuildContext context) {
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _isDragging = true),
-      onDragExited: (_) => setState(() => _isDragging = false),
-      onDragDone: (details) {
+    return DropRegion(
+      formats: const [Formats.fileUri],
+      hitTestBehavior: HitTestBehavior.opaque,
+      onDropOver: (event) =>
+          event.session.allowedOperations.contains(DropOperation.copy)
+              ? DropOperation.copy
+              : DropOperation.none,
+      onDropEnter: (_) => setState(() => _isDragging = true),
+      onDropLeave: (_) => setState(() => _isDragging = false),
+      onPerformDrop: (event) async {
         setState(() => _isDragging = false);
-        final path = details.files.first.path;
-        if (_isVideoFile(path)) widget.onDrop(path);
+        final item = event.session.items.firstOrNull;
+        if (item == null) return;
+        final reader = item.dataReader;
+        if (reader == null || !reader.canProvide(Formats.fileUri)) return;
+        final c = Completer<String?>();
+        reader.getValue<Uri>(Formats.fileUri,
+            (uri) => c.complete(uri?.toFilePath()),
+            onError: (_) => c.complete(null));
+        final path = await c.future;
+        if (path != null && _isVideoFile(path)) widget.onDrop(path);
       },
       child: GestureDetector(
         onDoubleTap: widget.onDoubleTap,
@@ -791,13 +819,27 @@ class _PlayerPlaceholderState extends State<_PlayerPlaceholder> {
 
   @override
   Widget build(BuildContext context) {
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _isDragging = true),
-      onDragExited: (_) => setState(() => _isDragging = false),
-      onDragDone: (details) {
+    return DropRegion(
+      formats: const [Formats.fileUri],
+      hitTestBehavior: HitTestBehavior.opaque,
+      onDropOver: (event) =>
+          event.session.allowedOperations.contains(DropOperation.copy)
+              ? DropOperation.copy
+              : DropOperation.none,
+      onDropEnter: (_) => setState(() => _isDragging = true),
+      onDropLeave: (_) => setState(() => _isDragging = false),
+      onPerformDrop: (event) async {
         setState(() => _isDragging = false);
-        final path = details.files.first.path;
-        if (_isVideoFile(path)) widget.onDrop(path);
+        final item = event.session.items.firstOrNull;
+        if (item == null) return;
+        final reader = item.dataReader;
+        if (reader == null || !reader.canProvide(Formats.fileUri)) return;
+        final c = Completer<String?>();
+        reader.getValue<Uri>(Formats.fileUri,
+            (uri) => c.complete(uri?.toFilePath()),
+            onError: (_) => c.complete(null));
+        final path = await c.future;
+        if (path != null && _isVideoFile(path)) widget.onDrop(path);
       },
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),

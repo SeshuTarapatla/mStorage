@@ -20,25 +20,23 @@ Before touching any code, produce a written plan of the changes described in QUE
 ### 4. Implement and iterate
 Apply the changes. The user will review and give feedback. Go back and forth until the user explicitly says they are satisfied and ready to release.
 
-### 5. Raise a PR
-When the user confirms readiness, open a GitHub PR from `feat/vX.Y.Z` → `main`.
-
-### 6. Merge
-
-### 7. Bump version numbers and build the installer
-**Both** of the following must be updated to X.Y.Z before building — missing either one causes the installed app to misreport its version and the update checker to fire on every launch:
+### 5. Bump version numbers on the feature branch
+Once the user is satisfied, bump **both** of the following to X.Y.Z **before raising the PR** — do this on `feat/vX.Y.Z`, not on `main`. Missing either one causes the installed app to misreport its version and the update checker to fire on every launch:
 
 | File | Field | Example |
 |---|---|---|
-| `pubspec.yaml` | `version: X.Y.Z+N` — increment build number N by 1 each release | `1.4.1+11` |
-| `installer.iss` | `#define AppVersion "X.Y.Z"` | `"1.4.1"` |
+| `pubspec.yaml` | `version: X.Y.Z+N` — increment build number N by 1 each release | `1.6.2+17` |
+| `installer.iss` | `#define AppVersion "X.Y.Z"` | `"1.6.2"` |
 
-After updating both files, build:
+### 6. Raise a PR
+Open a GitHub PR from `feat/vX.Y.Z` → `main`.
+
+### 7. Merge and build the installer
+After merging, build:
 ```
 flutter build windows --release
 iscc installer.iss
 ```
-Commit both file changes to `main` with message `chore: bump version to X.Y.Z`.
 
 ### 8. Tag and release on GitHub
 Create a GitHub release using the tag `vX.Y.Z`. Write release notes following the rules in `.github/RELEASE_TEMPLATE.md`:

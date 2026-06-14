@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -183,6 +184,38 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
 
   Future<void> _runEncode() async {
     if (_videoPath == null) return;
+
+    final enteredDate = DateTime.tryParse(_dateCtrl.text.trim());
+    if (enteredDate != null) {
+      final today = DateTime.now();
+      if (enteredDate.year == today.year &&
+          enteredDate.month == today.month &&
+          enteredDate.day == today.day) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Date is set to today"),
+            content: const Text(
+              "The encode date matches today's date. Did you forget to update it?\n\n"
+              "Tap \"Encode anyway\" to continue, or go back and set the correct date.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Go back'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Encode anyway'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+      }
+    }
+    if (!mounted) return;
+
     final settings = ref.read(settingsProvider);
     final title = _titleCtrl.text.trim().isEmpty
         ? p.basenameWithoutExtension(_videoPath!)
@@ -240,9 +273,27 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
 
     final anyFieldSet = _videoPath != null || _posterPath != null || _srtPath != null;
 
-    return DropTarget(
-      onDragDone: (details) =>
-          _routeFiles(details.files.map((f) => f.path).toList()),
+    return DropRegion(
+      formats: const [Formats.fileUri],
+      hitTestBehavior: HitTestBehavior.opaque,
+      onDropOver: (event) =>
+          event.session.allowedOperations.contains(DropOperation.copy)
+              ? DropOperation.copy
+              : DropOperation.none,
+      onPerformDrop: (event) async {
+        final paths = <String>[];
+        for (final item in event.session.items) {
+          final reader = item.dataReader;
+          if (reader == null || !reader.canProvide(Formats.fileUri)) continue;
+          final c = Completer<String?>();
+          reader.getValue<Uri>(Formats.fileUri,
+              (uri) => c.complete(uri?.toFilePath()),
+              onError: (_) => c.complete(null));
+          final path = await c.future;
+          if (path != null) paths.add(path);
+        }
+        if (paths.isNotEmpty) _routeFiles(paths);
+      },
       child: SingleChildScrollView(
             padding: const EdgeInsets.all(28),
             child: Column(

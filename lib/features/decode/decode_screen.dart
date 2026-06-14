@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -128,9 +129,24 @@ class _DecodeScreenState extends ConsumerState<DecodeScreen> {
       return const {'mp4', 'mkv', 'avi', 'mov', 'webm'}.contains(ext);
     }).firstOrNull;
 
-    return DropTarget(
-      onDragDone: (details) {
-        final path = details.files.first.path;
+    return DropRegion(
+      formats: const [Formats.fileUri],
+      hitTestBehavior: HitTestBehavior.opaque,
+      onDropOver: (event) =>
+          event.session.allowedOperations.contains(DropOperation.copy)
+              ? DropOperation.copy
+              : DropOperation.none,
+      onPerformDrop: (event) async {
+        final item = event.session.items.firstOrNull;
+        if (item == null) return;
+        final reader = item.dataReader;
+        if (reader == null || !reader.canProvide(Formats.fileUri)) return;
+        final c = Completer<String?>();
+        reader.getValue<Uri>(Formats.fileUri,
+            (uri) => c.complete(uri?.toFilePath()),
+            onError: (_) => c.complete(null));
+        final path = await c.future;
+        if (path == null) return;
         final ext = path.split('.').last.toLowerCase();
         if (ext == 'mp4') _onVideoDropped(path);
       },
