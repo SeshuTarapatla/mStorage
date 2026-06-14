@@ -16,6 +16,10 @@ Color get kTextPrimary => activeSpec.textPrimary;
 Color get kTextSecondary => activeSpec.textSecondary;
 Color get kTextMuted => activeSpec.textMuted;
 
+/// Opaque dialog background: blends surface over bg so glass/glassy themes
+/// (e.g. Aurora where surface is 16% white) don't produce transparent dialogs.
+Color get kDialogColor => Color.alphaBlend(activeSpec.surface, activeSpec.bg);
+
 /// Base corner radius for the active theme (0 for Monolith/Phosphor, large for
 /// Aurora/Clay). Use for cards/buttons/inputs so shape adapts per theme.
 double get kRadius => activeSpec.radius;

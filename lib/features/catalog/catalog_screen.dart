@@ -503,7 +503,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen>
               showDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  backgroundColor: kSurfaceColor,
+                  backgroundColor: kDialogColor,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   title: Text('Already Downloaded',
                       style: TextStyle(color: kTextPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
@@ -592,6 +592,14 @@ class _TopBar extends StatelessWidget {
                 ),
         ),
         const SizedBox(width: 10),
+        if (showDownloads) ...[
+          _IconBtn(
+            icon: Icons.open_in_new_rounded,
+            tooltip: 'Open downloads folder',
+            onTap: onOpenFolder,
+          ),
+          const SizedBox(width: 6),
+        ],
         // Downloads history toggle (badge shows count when there are records).
         _DownloadsToggleBtn(
           active: showDownloads,
@@ -599,14 +607,6 @@ class _TopBar extends StatelessWidget {
           palette: palette,
           onTap: onToggleDownloads,
         ),
-        if (showDownloads) ...[
-          const SizedBox(width: 6),
-          _IconBtn(
-            icon: Icons.folder_open_rounded,
-            tooltip: 'Open downloads folder',
-            onTap: onOpenFolder,
-          ),
-        ],
         if (sheetUrl != null) ...[
           const SizedBox(width: 6),
           _IconBtn(
@@ -1681,7 +1681,7 @@ class _DownloadRecordRow extends StatelessWidget {
               onPressed: () => showDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  backgroundColor: kSurfaceColor,
+                  backgroundColor: kDialogColor,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   title: Text('Delete download?',
@@ -2471,7 +2471,7 @@ class _RequestDialogState extends ConsumerState<_RequestDialog> {
     final state = ref.watch(requestProvider);
 
     return Dialog(
-      backgroundColor: kSurfaceColor,
+      backgroundColor: kDialogColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
