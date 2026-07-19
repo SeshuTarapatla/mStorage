@@ -1,5 +1,11 @@
+/// Which IMDB entity type a title resolved as.
+/// Set whenever the kind was determined by the fetch (movie vs tv detail
+/// endpoint that actually returned 200) rather than assumed by the caller.
+enum ImdbKind { movie, tv }
+
 class ImdbData {
   final String id;
+  final ImdbKind? kind;
   final String title;
   final String plot;
   final List<String> genres;
@@ -11,7 +17,7 @@ class ImdbData {
   final List<String> stars;
   final String? certificate;
   // TV series fields — null for movies / episodes
-  final int? endYear; // end year for tvSeries (null if ongoing or not a series)
+  final int? endYear; // end year for a series (null if ongoing or not a series)
   // TV episode fields — null for movies / series
   final int? seasonNumber;
   final int? episodeNumber;
@@ -19,6 +25,7 @@ class ImdbData {
 
   const ImdbData({
     required this.id,
+    this.kind,
     required this.title,
     required this.plot,
     required this.genres,
@@ -35,89 +42,111 @@ class ImdbData {
     this.parentId,
   });
 
-  /// Parse from the live API response.
-  factory ImdbData.fromApi(Map<String, dynamic> json) {
-    final img = json['primaryImage'] as Map<String, dynamic>?;
-    final posterUrl = img?['url'] as String? ?? '';
-
-    final genres = (json['genres'] as List<dynamic>? ?? [])
-        .map((g) => g.toString())
-        .toList();
-
-    // API uses either a releaseDate object or a bare startYear integer.
-    DateTime? releaseDate;
-    final rd = json['releaseDate'] as Map<String, dynamic>?;
-    if (rd != null) {
-      final y = rd['year'] as int?;
-      if (y != null) {
-        releaseDate = DateTime(y, rd['month'] as int? ?? 1, rd['day'] as int? ?? 1);
-      }
-    } else {
-      final y = json['startYear'] as int?;
-      if (y != null) releaseDate = DateTime(y);
-    }
-
-    final ratingObj = json['rating'] as Map<String, dynamic>?;
-    final rating = (ratingObj?['aggregateRating'] as num?)?.toDouble();
-    final voteCount = ratingObj?['voteCount'] as int?;
-
-    final stars = (json['stars'] as List<dynamic>? ?? [])
-        .take(3)
-        .map((s) => (s as Map<String, dynamic>)['displayName']?.toString() ?? '')
-        .where((s) => s.isNotEmpty)
-        .toList();
-
-    final certs = json['certificates'] as List<dynamic>? ?? [];
-    String? certificate;
-    for (final c in certs) {
-      final cm = c as Map<String, dynamic>;
-      if (cm['country'] == 'US') {
-        certificate = cm['rating']?.toString();
-        break;
-      }
-    }
-    certificate ??= certs.isNotEmpty
-        ? (certs.first as Map<String, dynamic>)['rating']?.toString()
-        : null;
-
-    final endYear = json['endYear'] as int?;
-
-    // TV episode: season / episode number and parent series ID.
-    // API may return these flat or nested under an "episode" object.
-    final epObj = json['episode'] as Map<String, dynamic>?;
-    final seasonNumber = (json['seasonNumber'] as num?)?.toInt()
-        ?? (epObj?['seasonNumber'] as num?)?.toInt();
-    final episodeNumber = (json['episodeNumber'] as num?)?.toInt()
-        ?? (epObj?['episodeNumber'] as num?)?.toInt();
-    // Parent series ID: try several common field names.
-    final seriesObj = json['series'] as Map<String, dynamic>?;
-    final parentId = json['seriesId'] as String?
-        ?? json['parentId'] as String?
-        ?? seriesObj?['id'] as String?;
+  /// Parses a `GET /movie/{id}` response, optionally merging in cast names
+  /// from a companion `GET /movie/{id}/credits` response.
+  factory ImdbData.fromMovieApi(Map<String, dynamic> detail,
+      [Map<String, dynamic>? credits]) {
+    final cert = detail['certificate'] as Map<String, dynamic>?;
+    // API runtime is in minutes; the app's internal field is seconds.
+    final runtimeMin = (detail['runtime'] as num?)?.toInt();
 
     return ImdbData(
-      id: json['id'] as String? ?? '',
-      // API field is primaryTitle, not title
-      title: json['primaryTitle'] as String? ?? json['title'] as String? ?? '',
-      plot: json['plot'] as String? ?? '',
-      genres: genres,
-      releaseDate: releaseDate,
-      posterUrl: posterUrl,
-      rating: rating,
-      voteCount: voteCount,
-      runtimeSeconds: json['runtimeSeconds'] as int?,
-      stars: stars,
-      certificate: certificate,
-      endYear: endYear,
-      seasonNumber: seasonNumber,
-      episodeNumber: episodeNumber,
-      parentId: parentId?.isNotEmpty == true ? parentId : null,
+      id: detail['id'] as String? ?? '',
+      kind: ImdbKind.movie,
+      title: detail['title'] as String? ?? '',
+      plot: detail['overview'] as String? ?? '',
+      genres: _genreNames(detail['genres']),
+      releaseDate: _parseDate(detail['release_date']),
+      posterUrl: detail['poster_path'] as String? ?? '',
+      rating: (detail['vote_average'] as num?)?.toDouble(),
+      voteCount: (detail['vote_count'] as num?)?.toInt(),
+      runtimeSeconds: runtimeMin != null ? runtimeMin * 60 : null,
+      stars: _castNames(credits),
+      certificate: cert?['rating'] as String?,
     );
+  }
+
+  /// Parses a `GET /tv/{id}` response, optionally merging in cast names
+  /// from a companion `GET /tv/{id}/credits` response.
+  factory ImdbData.fromTvApi(Map<String, dynamic> detail,
+      [Map<String, dynamic>? credits]) {
+    final cert = detail['certificate'] as Map<String, dynamic>?;
+    final inProduction = detail['in_production'] as bool? ?? false;
+    final lastAirDate = _parseDate(detail['last_air_date']);
+
+    return ImdbData(
+      id: detail['id'] as String? ?? '',
+      kind: ImdbKind.tv,
+      title: detail['name'] as String? ?? '',
+      plot: detail['overview'] as String? ?? '',
+      genres: _genreNames(detail['genres']),
+      releaseDate: _parseDate(detail['first_air_date']),
+      posterUrl: detail['poster_path'] as String? ?? '',
+      rating: (detail['vote_average'] as num?)?.toDouble(),
+      voteCount: (detail['vote_count'] as num?)?.toInt(),
+      runtimeSeconds: null, // a series has no single runtime value
+      stars: _castNames(credits),
+      certificate: cert?['rating'] as String?,
+      endYear: inProduction ? null : lastAirDate?.year,
+    );
+  }
+
+  /// Parses a `GET /tv/{seriesId}/season/{s}/episode/{e}` response.
+  /// [parentId] is the series ID used to make the request — the response
+  /// itself doesn't echo it back.
+  factory ImdbData.fromEpisodeApi(Map<String, dynamic> json,
+      {required String parentId}) {
+    return ImdbData(
+      id: json['id'] as String? ?? '',
+      kind: ImdbKind.tv,
+      title: json['name'] as String? ?? '',
+      plot: json['overview'] as String? ?? '',
+      genres: const [],
+      releaseDate: _parseDate(json['air_date']),
+      posterUrl: json['still_path'] as String? ?? '',
+      rating: (json['vote_average'] as num?)?.toDouble(),
+      voteCount: (json['vote_count'] as num?)?.toInt(),
+      // Episode runtime from this endpoint is already in seconds.
+      runtimeSeconds: (json['runtime'] as num?)?.toInt(),
+      stars: const [],
+      certificate: null,
+      seasonNumber: (json['season_number'] as num?)?.toInt(),
+      episodeNumber: (json['episode_number'] as num?)?.toInt(),
+      parentId: parentId,
+    );
+  }
+
+  static DateTime? _parseDate(dynamic raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  static List<String> _genreNames(dynamic raw) {
+    final list = raw as List<dynamic>? ?? const [];
+    return list
+        .map((g) => (g as Map<String, dynamic>)['name']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  static List<String> _castNames(Map<String, dynamic>? credits) {
+    if (credits == null) return const [];
+    final cast = credits['cast'] as List<dynamic>? ?? const [];
+    return cast
+        .take(3)
+        .map((c) => (c as Map<String, dynamic>)['name']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// Parse from the on-disk cache.
   factory ImdbData.fromJson(Map<String, dynamic> j) => ImdbData(
         id: j['id'] as String? ?? '',
+        kind: switch (j['kind'] as String?) {
+          'movie' => ImdbKind.movie,
+          'tv' => ImdbKind.tv,
+          _ => null,
+        },
         title: j['title'] as String? ?? '',
         plot: j['plot'] as String? ?? '',
         genres: (j['genres'] as List<dynamic>? ?? []).map((g) => '$g').toList(),
@@ -138,6 +167,7 @@ class ImdbData {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        if (kind != null) 'kind': kind == ImdbKind.movie ? 'movie' : 'tv',
         'title': title,
         'plot': plot,
         'genres': genres,

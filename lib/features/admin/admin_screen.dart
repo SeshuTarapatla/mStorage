@@ -75,9 +75,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   // Positions 0-3 are slide_images (amber star); 4+ are cyan border.
   List<String> _selected = [];
 
-  // Cursor for the next images page; null = no more pages available.
-  String? _nextPageToken;
-  // True while a "Load more" or paste-enrichment API call is in flight.
+  // True while a paste-enrichment API call is in flight.
   bool _loadingMore = false;
 
   // Brief highlight on pool image tap; auto-clears after 200 ms.
@@ -206,16 +204,13 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     _imdbIdCtrl.text = imdbId;
     setState(() { _fetching = true; _error = null; _data = null; });
 
-    final results = await ImdbService().resolve([imdbId]);
+    // Type is unknown ahead of time for a pasted request — resolve tries
+    // /movie then /tv and tells us definitively which one matched.
+    final results = await ImdbService().resolveUnknown([imdbId]);
     if (!mounted) return;
 
     final data = results[imdbId];
-    // Detect series: ended series have endYear; ongoing series typically lack
-    // runtimeSeconds (episodes have per-ep runtime, not a single feature length).
-    final isSeries = data != null &&
-        data.parentId == null &&
-        data.seasonNumber == null &&
-        (data.endYear != null || data.runtimeSeconds == null);
+    final isSeries = data?.kind == ImdbKind.tv;
 
     _setMode(isSeries ? _AdminMode.series : _AdminMode.movie);
     _imdbIdCtrl.text = imdbId;
@@ -246,21 +241,20 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _encoded = true; _show = true;
     });
     try {
-      final results = await ImdbService().resolve([id]);
+      final results = await ImdbService().resolve([id], ImdbKind.movie);
       final data = results[id];
       if (!mounted) return;
       if (data == null) {
         setState(() { _error = 'No data found for "$id".'; _fetching = false; });
         return;
       }
-      final page1 = await ImdbService().fetchImagesUncached(id);
+      final images = await ImdbService().fetchAllImages(id, ImdbKind.movie);
       if (!mounted) return;
       setState(() {
         _data = data;
         _genres = List<String>.from(data.genres);
-        _allImages = page1.images;
-        _selected = page1.images.take(4).toList();
-        _nextPageToken = page1.nextPageToken;
+        _allImages = images;
+        _selected = images.take(4).toList();
         _selectedYear  = data.releaseDate?.year;
         _selectedMonth = data.releaseDate?.month ?? 1;
         _selectedDay   = data.releaseDate?.day   ?? 1;
@@ -277,7 +271,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _genres = []; _tags = [];
     });
     try {
-      final results = await ImdbService().resolve([id]);
+      final results = await ImdbService().resolve([id], ImdbKind.tv);
       if (!mounted) return;
       final data = results[id];
       if (data == null) {
@@ -299,30 +293,50 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       setState(() => _error = 'Series IMDB ID is required.');
       return;
     }
+    final season  = int.tryParse(_seasonCtrl.text.trim());
+    final episode = int.tryParse(_episodeCtrl.text.trim());
+    if (season == null || episode == null) {
+      setState(() => _error = 'Season and episode number are required.');
+      return;
+    }
     setState(() {
       _fetching = true; _error = null; _data = null; _episodeData = null;
       _videoUrlCtrl.clear(); _languageCtrl.clear(); _sizeMbCtrl.clear();
       _encoded = true; _show = true;
     });
     try {
-      final ids = <String>[seriesId];
-      if (episodeId.isNotEmpty) ids.add(episodeId);
-      final results = await ImdbService().resolve(ids);
+      final results = await Future.wait([
+        ImdbService().resolve([seriesId], ImdbKind.tv),
+        ImdbService().resolveEpisode(
+          episodeImdbId: episodeId,
+          seriesId: seriesId,
+          season: season,
+          episode: episode,
+        ),
+      ]);
       if (!mounted) return;
-      final seriesData = results[seriesId];
+      final seriesData = (results[0] as Map<String, ImdbData>)[seriesId];
       if (seriesData == null) {
         setState(() { _error = 'No series data for "$seriesId".'; _fetching = false; });
         return;
       }
-      final epData = episodeId.isNotEmpty ? results[episodeId] : null;
-      if (episodeId.isNotEmpty && epData == null) {
-        setState(() { _error = 'No episode data for "$episodeId".'; _fetching = false; });
+      final epData = results[1] as ImdbData?;
+      if (epData == null) {
+        setState(() {
+          _error = 'No episode data for S${season}E$episode of "$seriesId".';
+          _fetching = false;
+        });
         return;
       }
       setState(() {
         _data        = seriesData;
         _episodeData = epData;
-        _selectedYear  = epData?.releaseDate?.year;
+        // The episode's own tt id is exposed in the response — auto-fill it
+        // if the admin hasn't already typed one in.
+        if (episodeId.isEmpty && epData.id.isNotEmpty) {
+          _imdbIdCtrl.text = epData.id;
+        }
+        _selectedYear  = epData.releaseDate?.year;
         _selectedMonth = 1;
         _selectedDay   = 1;
         _fetching = false;
@@ -331,27 +345,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       if (mounted) setState(() { _error = e.toString(); _fetching = false; });
     }
   }
-
-  Future<void> _loadMoreImages() async {
-    final id = _imdbIdCtrl.text.trim();
-    if (id.isEmpty || _loadingMore || _nextPageToken == null) return;
-    final token = _nextPageToken!;
-    setState(() => _loadingMore = true);
-    try {
-      final next = await ImdbService().fetchImagesUncached(id, pageToken: token);
-      if (!mounted) return;
-      final existing = _allImages.toSet();
-      final fresh = next.images.where((u) => !existing.contains(u)).toList();
-      setState(() {
-        _allImages = [..._allImages, ...fresh];
-        _nextPageToken = next.nextPageToken;
-        _loadingMore = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loadingMore = false);
-    }
-  }
-
 
   // ── Clipboard paste ───────────────────────────────────────────────────────
 
@@ -377,15 +370,18 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
 
     final tabCols = text.split('\t');
 
-    // Case 2a: Series TSV (10 cols) in series mode.
+    // Case 2a: Series TSV in series mode.
     if (_mode == _AdminMode.series && tabCols.length >= SeriesSheetSchema.columnCount) {
       final sc = SeriesSheetSchema.parseTsv(text);
       final genresRaw = sc[SeriesSheetSchema.iGenres];
       final tagsRaw   = sc[SeriesSheetSchema.iTags];
+      final starsRaw  = sc[SeriesSheetSchema.iStars];
       final genres = genresRaw.isEmpty ? <String>[] : genresRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
       final tags   = tagsRaw.isEmpty   ? <String>[] : tagsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final stars  = starsRaw.isEmpty  ? <String>[] : starsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
       final startYear = int.tryParse(sc[SeriesSheetSchema.iStartYear]);
       final seriesId  = sc[SeriesSheetSchema.iSeriesImdbId];
+      final certRaw   = sc[SeriesSheetSchema.iCertificate];
 
       setState(() {
         _imdbIdCtrl.text = seriesId;
@@ -400,7 +396,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           releaseDate: startYear != null ? DateTime(startYear) : null,
           posterUrl: sc[SeriesSheetSchema.iPosterUrl],
           rating: double.tryParse(sc[SeriesSheetSchema.iRating]),
-          voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
+          voteCount: null, runtimeSeconds: null,
+          stars: stars,
+          certificate: certRaw.isEmpty ? null : certRaw,
           endYear: int.tryParse(sc[SeriesSheetSchema.iEndYear]),
         );
         _loadingMore = seriesId.isNotEmpty;
@@ -408,10 +406,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _error       = null;
       });
 
-      // Enrich from API in background
+      // Enrich from API in background — pasted values win, API fills gaps.
       if (seriesId.isEmpty) return;
       try {
-        final results = await ImdbService().resolve([seriesId]);
+        final results = await ImdbService().resolve([seriesId], ImdbKind.tv);
         if (!mounted) return;
         final meta = results[seriesId];
         if (meta == null) { setState(() => _loadingMore = false); return; }
@@ -424,9 +422,11 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             genres: pasted.genres.isNotEmpty ? pasted.genres : List<String>.from(meta.genres),
             releaseDate: meta.releaseDate ?? pasted.releaseDate,
             posterUrl: pasted.posterUrl.isNotEmpty ? pasted.posterUrl : meta.posterUrl,
-            rating: meta.rating, voteCount: meta.voteCount,
+            rating: pasted.rating ?? meta.rating,
+            voteCount: meta.voteCount,
             runtimeSeconds: meta.runtimeSeconds,
-            stars: meta.stars, certificate: meta.certificate,
+            stars: pasted.stars.isNotEmpty ? pasted.stars : meta.stars,
+            certificate: pasted.certificate ?? meta.certificate,
             endYear: meta.endYear ?? pasted.endYear,
           );
           _genres      = _data!.genres;
@@ -438,11 +438,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       return;
     }
 
-    // Case 2b: Episode TSV (14 cols) in episode mode.
+    // Case 2b: Episode TSV in episode mode.
     if (_mode == _AdminMode.episode && tabCols.length >= EpisodeSheetSchema.columnCount) {
       final ec     = EpisodeSheetSchema.parseTsv(text);
       final epDate = DateTime.tryParse(ec[EpisodeSheetSchema.iAirDate]);
       final seriesId = ec[EpisodeSheetSchema.iSeriesImdbId];
+      final runtimeMin = int.tryParse(ec[EpisodeSheetSchema.iRuntimeMin]);
 
       setState(() {
         _imdbIdCtrl.text     = ec[EpisodeSheetSchema.iEpisodeImdbId];
@@ -466,7 +467,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                 releaseDate: epDate,
                 posterUrl: ec[EpisodeSheetSchema.iThumbnailUrl],
                 rating: double.tryParse(ec[EpisodeSheetSchema.iRating]),
-                voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
+                voteCount: null,
+                runtimeSeconds: runtimeMin != null ? runtimeMin * 60 : null,
+                stars: const [], certificate: null,
               )
             : null;
         // Minimal series placeholder so form renders; enriched below.
@@ -475,7 +478,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           releaseDate: null, posterUrl: '', rating: null,
           voteCount: null, runtimeSeconds: null, stars: const [], certificate: null,
         );
-        _allImages = []; _selected = []; _nextPageToken = null;
+        _allImages = []; _selected = [];
         _loadingMore = seriesId.isNotEmpty;
         _fetching    = false;
         _error       = null;
@@ -484,7 +487,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       // Enrich series context from API in background
       if (seriesId.isEmpty) return;
       try {
-        final results = await ImdbService().resolve([seriesId]);
+        final results = await ImdbService().resolve([seriesId], ImdbKind.tv);
         if (!mounted) return;
         final meta = results[seriesId];
         if (meta == null) { setState(() => _loadingMore = false); return; }
@@ -511,6 +514,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     final encodedRaw = cols[SheetSchema.iEncoded].toLowerCase();
     final showRaw    = cols[SheetSchema.iShow].toLowerCase();
     final slidesRaw  = cols[SheetSchema.iSlideImages];
+    final ratingRaw  = cols[SheetSchema.iRating];
+    final runtimeMin = int.tryParse(cols[SheetSchema.iRuntimeMin]);
+    final certRaw    = cols[SheetSchema.iCertificate];
+    final starsRaw   = cols[SheetSchema.iStars];
 
     final genres = genresRaw.isEmpty
         ? <String>[]
@@ -518,6 +525,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     final tags = tagsRaw.isEmpty
         ? <String>[]
         : tagsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final stars = starsRaw.isEmpty
+        ? <String>[]
+        : starsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
     // sheet order (pos 1 first); queue needs newest-first so reverse later
     final slideImages = slidesRaw.isEmpty
         ? <String>[]
@@ -541,12 +551,13 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _data   = ImdbData(
         id: imdbId, title: title, plot: plot, genres: genres,
         releaseDate: date, posterUrl: posterUrl,
-        rating: null, voteCount: null, runtimeSeconds: null,
-        stars: const [], certificate: null,
+        rating: double.tryParse(ratingRaw), voteCount: null,
+        runtimeSeconds: runtimeMin != null ? runtimeMin * 60 : null,
+        stars: stars,
+        certificate: certRaw.isEmpty ? null : certRaw,
       );
       _allImages     = List<String>.from(slideImages);
       _selected      = List<String>.from(slideImages);
-      _nextPageToken = null;
       // _loadingMore spinner shows while we enrich from API below
       _loadingMore   = imdbId.isNotEmpty;
       _fetching     = false;
@@ -558,14 +569,13 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     // Enrich: fetch metadata + fresh images in parallel; clipboard wins on conflicts.
     try {
       final results = await Future.wait([
-        ImdbService().resolve([imdbId]),
-        ImdbService().fetchImagesUncached(imdbId),
+        ImdbService().resolve([imdbId], ImdbKind.movie),
+        ImdbService().fetchAllImages(imdbId, ImdbKind.movie),
       ]);
       if (!mounted) return;
 
       final meta    = (results[0] as Map<String, ImdbData>)[imdbId];
-      final page1   = results[1] as ({List<String> images, String? nextPageToken});
-      final apiImgs = page1.images;
+      final apiImgs = results[1] as List<String>;
 
       // Clipboard values take priority; API fills any gaps.
       final mergedPosterUrl = posterUrl.isNotEmpty ? posterUrl : (meta?.posterUrl ?? '');
@@ -573,6 +583,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       final mergedGenres    = genres.isNotEmpty    ? genres    : List<String>.from(meta?.genres ?? []);
       final mergedDate      = date ?? meta?.releaseDate;
       final mergedTitle     = title.isNotEmpty     ? title     : (meta?.title ?? '');
+      final pastedRating    = double.tryParse(ratingRaw);
+      final pastedRuntimeSeconds = runtimeMin != null ? runtimeMin * 60 : null;
 
       // Image pool: API images first, then any pasted slides not already in pool.
       final apiSet     = apiImgs.toSet();
@@ -583,9 +595,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _data = ImdbData(
           id: imdbId, title: mergedTitle, plot: mergedPlot,
           genres: mergedGenres, releaseDate: mergedDate, posterUrl: mergedPosterUrl,
-          rating: meta?.rating, voteCount: meta?.voteCount,
-          runtimeSeconds: meta?.runtimeSeconds,
-          stars: meta?.stars ?? const [], certificate: meta?.certificate,
+          rating: pastedRating ?? meta?.rating, voteCount: meta?.voteCount,
+          runtimeSeconds: pastedRuntimeSeconds ?? meta?.runtimeSeconds,
+          stars: stars.isNotEmpty ? stars : (meta?.stars ?? const []),
+          certificate: certRaw.isNotEmpty ? certRaw : meta?.certificate,
         );
         _genres        = mergedGenres;
         _selectedYear  = mergedDate?.year  ?? _selectedYear;
@@ -593,7 +606,6 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _selectedDay   = mergedDate?.day   ?? _selectedDay;
         _allImages     = mergedImages;
         _selected      = List<String>.from(slideImages);
-        _nextPageToken = page1.nextPageToken;
         _loadingMore   = false;
       });
     } catch (_) {
@@ -1535,35 +1547,21 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                         delay: Duration(milliseconds: min(poolIdx, 8) * 25))
                     .slideY(begin: 0.05, duration: 250.ms, curve: Curves.easeOut);
               }),
-              // Load more
-              if (_nextPageToken != null || _loadingMore)
-                GestureDetector(
-                  onTap: _loadingMore ? null : _loadMoreImages,
-                  child: MouseRegion(
-                    cursor: _loadingMore ? SystemMouseCursors.basic : SystemMouseCursors.click,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: 110, height: 82,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: kBorderColor),
-                        color: kSurface2Color,
-                      ),
-                      child: _loadingMore
-                          ? Center(child: SizedBox(
-                              width: 20, height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: _adminPalette.primary),
-                            ))
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.add_circle_outline_rounded, size: 22, color: kTextSecondary),
-                                const SizedBox(height: 4),
-                                Text('Load more', style: TextStyle(fontSize: 10, color: kTextSecondary)),
-                              ],
-                            ),
-                    ),
+              // Enrichment in progress (paste flow fetches metadata + the
+              // full image set in the background) — the API returns every
+              // image in one response now, so there's no "load more" step.
+              if (_loadingMore)
+                Container(
+                  width: 110, height: 82,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(color: kBorderColor),
+                    color: kSurface2Color,
                   ),
+                  child: Center(child: SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _adminPalette.primary),
+                  )),
                 ),
             ],
           ),
@@ -1644,10 +1642,16 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                               fontSize: 11, color: kTextSecondary),
                         ),
                       ],
-                      if (_episodeData!.rating != null) ...[
+                      if (_episodeData!.rating != null ||
+                          _episodeData!.runtimeSeconds != null) ...[
                         const SizedBox(height: 2),
                         Text(
-                          '★ ${_episodeData!.rating!.toStringAsFixed(1)}',
+                          [
+                            if (_episodeData!.rating != null)
+                              '★ ${_episodeData!.rating!.toStringAsFixed(1)}',
+                            if (_episodeData!.runtimeSeconds != null)
+                              _fmtRuntime(_episodeData!.runtimeSeconds!),
+                          ].join('   '),
                           style: const TextStyle(
                               fontSize: 11, color: Color(0xFFF5C518)),
                         ),
@@ -1682,6 +1686,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _genres.join(', '),                         // genres
       _tags.join(', '),                           // tags
       _show ? 'TRUE' : 'FALSE',                   // show
+      d.certificate ?? '',                        // certificate
+      d.stars.join(', '),                         // stars
     ];
   }
 
@@ -1702,6 +1708,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _languageCtrl.text.trim(),                  // language
       _encoded ? 'TRUE' : 'FALSE',                // encoded
       _show    ? 'TRUE' : 'FALSE',                // show
+      ep.runtimeSeconds != null
+          ? (ep.runtimeSeconds! ~/ 60).toString()
+          : '',                                    // runtime_min
     ];
   }
 
@@ -1863,6 +1872,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
       _encoded ? 'TRUE' : 'FALSE',
       _show    ? 'TRUE' : 'FALSE',
       _selected.take(4).join(', '),
+      data.rating?.toStringAsFixed(1) ?? '',
+      data.runtimeSeconds != null
+          ? (data.runtimeSeconds! ~/ 60).toString()
+          : '',
+      data.certificate ?? '',
+      data.stars.join(', '),
     ];
   }
 
@@ -2472,11 +2487,8 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
       RegExp(r'/spreadsheets/d/([a-zA-Z0-9_-]+)');
 
   static String _inferType(ImdbData? data) {
-    if (data == null) return 'Movie';
-    if (data.parentId != null || data.seasonNumber != null) return 'Episode';
-    if (data.endYear != null) return 'Series';
-    if (data.runtimeSeconds == null) return 'Series';
-    return 'Movie';
+    if (data == null) return 'Unknown';
+    return data.kind == ImdbKind.tv ? 'Series' : 'Movie';
   }
 
   @override
@@ -2554,7 +2566,7 @@ class _AdminRequestsPanelState extends ConsumerState<_AdminRequestsPanel> {
       final ids = rawRows.map((r) => r.imdbId).toSet().toList();
       final imdbMap = ids.isEmpty
           ? <String, ImdbData>{}
-          : await ImdbService().resolve(ids);
+          : await ImdbService().resolveUnknown(ids);
 
       final parsed = rawRows.map((r) {
         final data = imdbMap[r.imdbId];

@@ -14,6 +14,8 @@ class SeriesSheetSchema {
     'genres',          // 7 — comma-separated
     'tags',            // 8 — comma-separated
     'show',            // 9 — TRUE / FALSE
+    'certificate',     // 10 — e.g. TV-MA
+    'stars',           // 11 — top 3 cast, comma-separated
   ];
 
   static const int iSeriesImdbId = 0;
@@ -26,8 +28,10 @@ class SeriesSheetSchema {
   static const int iGenres       = 7;
   static const int iTags         = 8;
   static const int iShow         = 9;
+  static const int iCertificate  = 10;
+  static const int iStars        = 11;
 
-  static const int columnCount = 10;
+  static const int columnCount = 12;
 
   static String get headerTsv => columns.join('\t');
 

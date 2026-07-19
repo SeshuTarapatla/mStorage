@@ -11,6 +11,7 @@ import '../../core/services/catalog_cache_manager.dart';
 import '../../core/services/settings_service.dart';
 import 'imdb_service.dart';
 import 'models/catalog_entry.dart';
+import 'models/imdb_data.dart';
 
 const _prefKey = 'catalog_sheet_url';
 
@@ -168,16 +169,19 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
         .toList();
   }
 
-  /// Merges IMDB metadata into [raw] entries. Makes network calls for uncached IDs.
+  /// Merges IMDB metadata into [raw] entries. Only rows still missing one
+  /// of the sheet-persisted IMDB fields (rating/runtime/certificate/stars/
+  /// etc.) trigger a network call — a fully backfilled row never touches
+  /// the API.
   Future<List<CatalogEntry>> _mergeImdb(List<CatalogEntry> raw) async {
     final imdbIds = raw
-        .where((e) => e.imdbId.isNotEmpty)
+        .where((e) => e.imdbId.isNotEmpty && e.needsImdbFetch)
         .map((e) => e.imdbId)
         .toList();
 
     final imdbMap = imdbIds.isNotEmpty
-        ? await ImdbService().resolve(imdbIds)
-        : <String, dynamic>{};
+        ? await ImdbService().resolve(imdbIds, ImdbKind.movie)
+        : <String, ImdbData>{};
 
     return raw.map((e) {
       final data = imdbMap[e.imdbId];

@@ -101,8 +101,13 @@ class RequestNotifier extends StateNotifier<RequestState> {
       final config =
           _ref.read(sheetConfigProvider).valueOrNull ?? const SheetConfig();
 
+      // Type is unknown ahead of time for a pasted URL — resolveUnknown
+      // tries /movie then /tv and tells us definitively which one matched.
+      // (It can't resolve a link to a specific episode at all — the API has
+      // no way to look one up except via its parent series + season +
+      // episode number, none of which is recoverable from a bare ID.)
       final results = await Future.wait([
-        ImdbService().resolve([id]),
+        ImdbService().resolveUnknown([id]),
         _fetchExistingIds(config.requestResUrl),
       ]);
 
@@ -119,8 +124,17 @@ class RequestNotifier extends StateNotifier<RequestState> {
           imdbUrl: 'https://www.imdb.com/title/$id/',
           title: data?.title ?? id,
           year: data?.releaseDate?.year,
-          type: _inferType(data),
+          type: _typeLabel(data),
           posterUrl: data?.posterUrl ?? '',
+        );
+        return;
+      }
+
+      if (data == null) {
+        state = RequestError(
+          "Couldn't find this on IMDb as a movie or TV series. If this "
+          "links to a specific episode, please submit the show's main "
+          'IMDb page instead.',
         );
         return;
       }
@@ -128,23 +142,19 @@ class RequestNotifier extends StateNotifier<RequestState> {
       state = RequestReady(
         imdbId: id,
         imdbUrl: 'https://www.imdb.com/title/$id/',
-        title: data?.title ?? id,
-        year: data?.releaseDate?.year,
-        type: _inferType(data),
-        posterUrl: data?.posterUrl ?? '',
+        title: data.title,
+        year: data.releaseDate?.year,
+        type: _typeLabel(data),
+        posterUrl: data.posterUrl,
       );
     } catch (e) {
       if (mounted) state = RequestError('Could not fetch IMDB data: $e');
     }
   }
 
-  static String _inferType(ImdbData? data) {
-    if (data == null) return 'Movie';
-    if (data.parentId != null || data.seasonNumber != null) return 'Episode';
-    if (data.endYear != null) return 'Series';
-    // Ongoing series have no runtimeSeconds and no endYear — heuristic only.
-    if (data.runtimeSeconds == null) return 'Series';
-    return 'Movie';
+  static String _typeLabel(ImdbData? data) {
+    if (data == null) return 'Unknown';
+    return data.kind == ImdbKind.tv ? 'Series' : 'Movie';
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────

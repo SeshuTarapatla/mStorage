@@ -18,6 +18,10 @@ class SheetSchema {
     'encoded',
     'show',
     'slide_images',
+    'rating',        // 13 — IMDB rating, fetched once and persisted
+    'runtime_min',   // 14 — runtime in minutes
+    'certificate',   // 15 — e.g. PG-13
+    'stars',         // 16 — top 3 cast, comma-separated
   ];
 
   static const int iTitle       = 0;
@@ -33,8 +37,12 @@ class SheetSchema {
   static const int iEncoded     = 10;
   static const int iShow        = 11;
   static const int iSlideImages = 12;
+  static const int iRating      = 13;
+  static const int iRuntimeMin  = 14;
+  static const int iCertificate = 15;
+  static const int iStars       = 16;
 
-  static const int columnCount = 13;
+  static const int columnCount = 17;
 
   /// Tab-separated header row, ready to paste as the first row of a sheet.
   static String get headerTsv => columns.join('\t');

@@ -7,6 +7,8 @@ class SeriesEntry {
   final List<String> tags;
   final String? language;
   final double? imdbRating;
+  final String? certificate;
+  final List<String> stars;
   final List<SeasonEntry> seasons;
 
   const SeriesEntry({
@@ -18,16 +20,32 @@ class SeriesEntry {
     required this.tags,
     this.language,
     this.imdbRating,
+    this.certificate,
+    this.stars = const [],
     required this.seasons,
   });
 
   int get totalEpisodes => seasons.fold(0, (s, e) => s + e.episodes.length);
 
+  /// True if any IMDB-fillable field is still blank — this row hasn't
+  /// been backfilled with the new columns yet and a live fetch is worth it.
+  bool get needsImdbFetch =>
+      posterUrl.isEmpty ||
+      plot.isEmpty ||
+      genres.isEmpty ||
+      imdbRating == null ||
+      certificate == null ||
+      stars.isEmpty;
+
+  /// Sheet values always win when present; API fills in only what the
+  /// sheet left blank.
   SeriesEntry withImdb({
     required String posterUrl,
     required String plot,
     required List<String> genres,
     required double? rating,
+    String? certificate,
+    List<String> stars = const [],
   }) =>
       SeriesEntry(
         title: title,
@@ -37,7 +55,9 @@ class SeriesEntry {
         genres: this.genres.isNotEmpty ? this.genres : genres,
         tags: tags,
         language: language,
-        imdbRating: rating,
+        imdbRating: imdbRating ?? rating,
+        certificate: this.certificate ?? certificate,
+        stars: this.stars.isNotEmpty ? this.stars : stars,
         seasons: seasons,
       );
 }
@@ -85,6 +105,17 @@ class EpisodeEntry {
     return m >= 60 ? '${m ~/ 60}h ${m % 60}m' : '${m}m';
   }
 
+  /// True if any IMDB-fillable field is still blank.
+  bool get needsImdbFetch =>
+      title.isEmpty ||
+      airDate == null ||
+      imdbRating == null ||
+      plot.isEmpty ||
+      posterUrl.isEmpty ||
+      runtimeSeconds == null;
+
+  /// Sheet values always win when present; API fills in only what the
+  /// sheet left blank.
   EpisodeEntry withImdb(
       {required String title,
       required DateTime? airDate,
@@ -100,9 +131,9 @@ class EpisodeEntry {
         videoUrl: videoUrl,
         sizeMb: sizeMb,
         encoded: encoded,
-        imdbRating: rating,
-        plot: plot,
-        posterUrl: posterUrl,
-        runtimeSeconds: runtimeSeconds,
+        imdbRating: imdbRating ?? rating,
+        plot: this.plot.isNotEmpty ? this.plot : plot,
+        posterUrl: this.posterUrl.isNotEmpty ? this.posterUrl : posterUrl,
+        runtimeSeconds: this.runtimeSeconds ?? runtimeSeconds,
       );
 }

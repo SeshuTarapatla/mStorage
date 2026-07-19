@@ -71,6 +71,10 @@ class CatalogEntry {
                                'poster', 'image', 'imageurl', 'cover'];
   static const _hSlides    = ['slideimages', 'slides', 'extraimages',
                                'slideshow', 'galleryimages'];
+  static const _hRating    = ['rating', 'imdbrating'];
+  static const _hRuntime   = ['runtimemin', 'runtime', 'runtimeminutes'];
+  static const _hCert      = ['certificate', 'cert', 'rated'];
+  static const _hStars     = ['stars', 'cast'];
 
   /// Parses a data row using the normalized header map produced by
   /// [CatalogNotifier] (keys are lowercase with separators stripped).
@@ -99,6 +103,10 @@ class CatalogEntry {
     final plot      = get(_hPlot);
     final thumbRaw  = get(_hThumb);
     final slidesRaw = get(_hSlides);
+    final ratingRaw = get(_hRating);
+    final runtimeMin = int.tryParse(get(_hRuntime));
+    final certRaw   = get(_hCert);
+    final starsRaw  = get(_hStars);
 
     return CatalogEntry(
       imdbId:       imdbId,
@@ -119,8 +127,29 @@ class CatalogEntry {
       slideImages:  slidesRaw.isEmpty
                       ? const []
                       : slidesRaw.split(',').map((u) => u.trim()).where((u) => u.isNotEmpty).toList(),
+      imdbRating:   double.tryParse(ratingRaw),
+      runtimeSeconds: runtimeMin != null ? runtimeMin * 60 : null,
+      certificate:  certRaw.isEmpty ? null : certRaw,
+      stars:        starsRaw.isEmpty
+                      ? const []
+                      : starsRaw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
     );
   }
+
+  /// True if any of the fields the IMDB API can fill are still blank —
+  /// i.e. this row hasn't been backfilled with the new columns yet and a
+  /// live API call is worth making. `voteCount` is excluded: it isn't
+  /// persisted to the sheet at all, so its absence never triggers a fetch.
+  bool get needsImdbFetch =>
+      title.isEmpty ||
+      date == null ||
+      genres.isEmpty ||
+      plot.isEmpty ||
+      thumbnailUrl.isEmpty ||
+      imdbRating == null ||
+      runtimeSeconds == null ||
+      certificate == null ||
+      stars.isEmpty;
 
   /// Returns a new entry with IMDB metadata merged in.
   /// Sheet values always win when present; API fills in only what the sheet left blank.
@@ -135,11 +164,11 @@ class CatalogEntry {
         videoUrl:     videoUrl,
         sizeMb:       sizeMb,
         encoded:      encoded,
-        imdbRating:   data.rating,
+        imdbRating:   imdbRating ?? data.rating,
         voteCount:    data.voteCount,
-        runtimeSeconds: data.runtimeSeconds,
-        stars:        data.stars,
-        certificate:  data.certificate,
+        runtimeSeconds: runtimeSeconds ?? data.runtimeSeconds,
+        stars:        stars.isNotEmpty ? stars : data.stars,
+        certificate:  certificate ?? data.certificate,
         language:     language,
         slideImages:  slideImages,
       );

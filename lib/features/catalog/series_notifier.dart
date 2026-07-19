@@ -190,6 +190,17 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
               meta.tags = t.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
             }
           }
+          meta.rating ??= double.tryParse(sc(row, ['rating']));
+          if (meta.certificate == null) {
+            final c = sc(row, ['certificate', 'cert', 'rated']);
+            if (c.isNotEmpty) meta.certificate = c;
+          }
+          if (meta.stars.isEmpty) {
+            final s = sc(row, ['stars', 'cast']);
+            if (s.isNotEmpty) {
+              meta.stars = s.split(',').map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
+            }
+          }
         }
       }
     }
@@ -238,6 +249,7 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
           final thumb   = ec(row, ['thumbnailurl', 'thumbnail', 'posterurl', 'image']);
           final plot    = ec(row, ['plot', 'description']);
           final rating  = double.tryParse(ec(row, ['rating']));
+          final runtimeMin = int.tryParse(ec(row, ['runtimemin', 'runtime', 'runtimeminutes']));
           final videoUrl = ec(row, ['videourl', 'url', 'googlephotosurl', 'albumurl', 'link']);
           final sizeMb  = int.tryParse(ec(row, ['sizemb', 'size', 'filesize']));
           final encoded = ec(row, ['encoded']).toLowerCase() == 'true';
@@ -253,6 +265,7 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
             plot: plot,
             posterUrl: thumb,
             imdbRating: rating,
+            runtimeSeconds: runtimeMin != null ? runtimeMin * 60 : null,
           );
 
           episodeTree
@@ -282,18 +295,23 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
         plot: meta.plot,
         genres: meta.genres,
         tags: meta.tags,
+        imdbRating: meta.rating,
+        certificate: meta.certificate,
+        stars: meta.stars,
         seasons: seasons,
       );
     }).toList();
 
-    // ── Series-level IMDB enrichment ─────────────────────────────────────────
-    final seriesImdbIds = rawEntries
-        .where((e) => e.imdbId.isNotEmpty)
+    // ── Series-level IMDB enrichment ───────────────────────────────────────
+    // Only rows still missing an IMDB-fillable field trigger a fetch — a
+    // fully backfilled sheet row never touches the API.
+    final seriesToFetch = rawEntries
+        .where((e) => e.imdbId.isNotEmpty && e.needsImdbFetch)
         .map((e) => e.imdbId)
         .toList();
 
-    final seriesImdbMap = seriesImdbIds.isNotEmpty
-        ? await ImdbService().resolve(seriesImdbIds)
+    final seriesImdbMap = seriesToFetch.isNotEmpty
+        ? await ImdbService().resolve(seriesToFetch, ImdbKind.tv)
         : <String, ImdbData>{};
 
     final seriesEnriched = rawEntries.map((e) {
@@ -304,21 +322,36 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
         plot: data.plot,
         genres: data.genres,
         rating: data.rating,
+        certificate: data.certificate,
+        stars: data.stars,
       );
     }).toList();
 
-    // ── Episode-level IMDB enrichment ─────────────────────────────────────────
-    final episodeImdbIds = seriesEnriched
-        .expand((s) => s.seasons)
-        .expand((season) => season.episodes)
-        .where((ep) => ep.imdbId.isNotEmpty)
-        .map((ep) => ep.imdbId)
-        .toSet()
-        .toList();
+    // ── Episode-level IMDB enrichment ────────────────────────────────────────
+    // The new API has no way to resolve an episode by its own ID — it's
+    // reached via series ID + season + episode number, both already in the
+    // Episodes sheet.
+    final episodeRequests = <EpisodeRequest>[];
+    for (final series in seriesEnriched) {
+      if (series.imdbId.isEmpty) continue;
+      for (final season in series.seasons) {
+        for (final ep in season.episodes) {
+          if (ep.imdbId.isNotEmpty && ep.needsImdbFetch) {
+            episodeRequests.add((
+              episodeImdbId: ep.imdbId,
+              seriesId: series.imdbId,
+              season: season.number,
+              episode: ep.episodeNumber,
+            ));
+          }
+        }
+      }
+    }
 
-    if (episodeImdbIds.isEmpty) return seriesEnriched;
+    if (episodeRequests.isEmpty) return seriesEnriched;
 
-    final epImdbMap = await ImdbService().resolve(episodeImdbIds);
+    final epImdbMap = await ImdbService().resolveEpisodes(episodeRequests);
+    if (epImdbMap.isEmpty) return seriesEnriched;
 
     return seriesEnriched.map((series) {
       final enrichedSeasons = series.seasons.map((season) {
@@ -345,6 +378,8 @@ class SeriesNotifier extends StateNotifier<SeriesCatalogState> {
         tags: series.tags,
         language: series.language,
         imdbRating: series.imdbRating,
+        certificate: series.certificate,
+        stars: series.stars,
         seasons: enrichedSeasons,
       );
     }).toList();
@@ -439,4 +474,7 @@ class _SeriesFields {
   List<String> genres = [];
   List<String> tags   = [];
   String? language;
+  double? rating;
+  String? certificate;
+  List<String> stars = [];
 }
