@@ -231,6 +231,8 @@ class _LeftPanel extends StatelessWidget {
                 icon: Icons.video_library_rounded,
                 label: '${e.totalEpisodes} Episodes',
               ),
+              if (e.certificate != null)
+                _Pill(icon: Icons.verified_user_rounded, label: e.certificate!),
               if (e.language != null)
                 _Pill(icon: Icons.translate_rounded, label: e.language!),
             ],
@@ -268,6 +270,15 @@ class _LeftPanel extends StatelessWidget {
                 color: kTextSecondary,
                 height: 1.65,
               ),
+            ),
+          ],
+
+          // Stars
+          if (e.stars.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              e.stars.join(' · '),
+              style: TextStyle(fontSize: 11, color: kTextMuted),
             ),
           ],
 

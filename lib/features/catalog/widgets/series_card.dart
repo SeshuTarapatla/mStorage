@@ -266,6 +266,11 @@ class SeriesCardExpandedState extends State<SeriesCardExpanded> {
                                 icon: Icons.video_library_rounded,
                                 label: '${e.totalEpisodes} Episodes',
                               ),
+                              if (e.certificate != null)
+                                _Pill(
+                                  icon: Icons.verified_user_rounded,
+                                  label: e.certificate!,
+                                ),
                               if (e.language != null)
                                 _Pill(
                                   icon: Icons.translate_rounded,
@@ -304,6 +309,19 @@ class SeriesCardExpandedState extends State<SeriesCardExpanded> {
                                 fontSize: 12,
                                 color: kTextSecondary,
                                 height: 1.55,
+                              ),
+                            ),
+                          ],
+                          // Stars
+                          if (e.stars.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              e.stars.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: kTextMuted,
                               ),
                             ),
                           ],

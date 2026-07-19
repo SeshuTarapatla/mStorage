@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m_storage/core/services/archive_service.dart';
 import 'package:m_storage/core/services/format_service.dart';
 import 'package:m_storage/features/catalog/models/catalog_entry.dart';
+import 'package:m_storage/features/catalog/models/imdb_data.dart';
 import 'package:m_storage/features/updater/update_service.dart';
 
 void main() {
@@ -243,6 +244,191 @@ void main() {
           ['X', 'https://a.com/1.jpg, https://b.com/2.jpg'], h);
       expect(entry.slideImages.length, equals(2));
       expect(entry.slideImages[0], equals('https://a.com/1.jpg'));
+    });
+
+    test('rating/runtime_min/certificate/stars parsed from sheet columns', () {
+      final h = mkHeaders(
+          ['title', 'rating', 'runtimeMin', 'certificate', 'stars']);
+      final entry = CatalogEntry.fromRow(
+          ['X', '8.8', '148', 'PG-13', 'Leonardo DiCaprio, Elliot Page'], h);
+      expect(entry.imdbRating, equals(8.8));
+      // Sheet stores runtime in minutes; the internal field is seconds.
+      expect(entry.runtimeSeconds, equals(148 * 60));
+      expect(entry.certificate, equals('PG-13'));
+      expect(entry.stars, equals(['Leonardo DiCaprio', 'Elliot Page']));
+    });
+
+    test('needsImdbFetch is false only once every fillable field is present', () {
+      final full = mkHeaders([
+        'title', 'date', 'genres', 'plot', 'posterUrl',
+        'rating', 'runtimeMin', 'certificate', 'stars',
+      ]);
+      final complete = CatalogEntry.fromRow([
+        'X', '2024-01-01', 'Action', 'A plot.', 'https://example.com/p.jpg',
+        '8.0', '120', 'PG-13', 'Someone',
+      ], full);
+      expect(complete.needsImdbFetch, isFalse);
+
+      final missingRating = CatalogEntry.fromRow([
+        'X', '2024-01-01', 'Action', 'A plot.', 'https://example.com/p.jpg',
+        '', '120', 'PG-13', 'Someone',
+      ], full);
+      expect(missingRating.needsImdbFetch, isTrue);
+    });
+  });
+
+  // ── CatalogEntry.mergeImdb — sheet-wins ─────────────────────────────────────
+
+  group('CatalogEntry.mergeImdb sheet-wins', () {
+    const apiData = ImdbData(
+      id: 'tt1',
+      kind: ImdbKind.movie,
+      title: 'API Title',
+      plot: 'API plot.',
+      genres: ['Drama'],
+      releaseDate: null,
+      posterUrl: 'https://api.example.com/poster.jpg',
+      rating: 7.5,
+      voteCount: 1000,
+      runtimeSeconds: 6000,
+      stars: ['API Star'],
+      certificate: 'R',
+    );
+
+    test('sheet-populated fields survive the merge untouched', () {
+      const sheetEntry = CatalogEntry(
+        imdbId: 'tt1',
+        title: 'Sheet Title',
+        date: null,
+        genres: ['Action'],
+        tags: [],
+        plot: 'Sheet plot.',
+        thumbnailUrl: 'https://sheet.example.com/poster.jpg',
+        videoUrl: '',
+        sizeMb: null,
+        encoded: false,
+        imdbRating: 9.0,
+        runtimeSeconds: 7200,
+        certificate: 'PG-13',
+        stars: ['Sheet Star'],
+      );
+      final merged = sheetEntry.mergeImdb(apiData);
+      expect(merged.title, equals('Sheet Title'));
+      expect(merged.plot, equals('Sheet plot.'));
+      expect(merged.thumbnailUrl, equals('https://sheet.example.com/poster.jpg'));
+      expect(merged.imdbRating, equals(9.0));
+      expect(merged.runtimeSeconds, equals(7200));
+      expect(merged.certificate, equals('PG-13'));
+      expect(merged.stars, equals(['Sheet Star']));
+    });
+
+    test('blank sheet fields are filled from the API', () {
+      const sheetEntry = CatalogEntry(
+        imdbId: 'tt1',
+        title: '',
+        date: null,
+        genres: [],
+        tags: [],
+        plot: '',
+        thumbnailUrl: '',
+        videoUrl: '',
+        sizeMb: null,
+        encoded: false,
+      );
+      final merged = sheetEntry.mergeImdb(apiData);
+      expect(merged.title, equals('API Title'));
+      expect(merged.plot, equals('API plot.'));
+      expect(merged.imdbRating, equals(7.5));
+      expect(merged.runtimeSeconds, equals(6000));
+      expect(merged.certificate, equals('R'));
+      expect(merged.stars, equals(['API Star']));
+    });
+  });
+
+  // ── ImdbData API parsing — unit conversions ─────────────────────────────────
+
+  group('ImdbData.fromMovieApi', () {
+    test('runtime in minutes is converted to seconds', () {
+      final data = ImdbData.fromMovieApi({
+        'id': 'tt1375666',
+        'title': 'Inception',
+        'overview': 'A thief...',
+        'genres': [
+          {'id': 'Sci-Fi', 'name': 'Sci-Fi'}
+        ],
+        'release_date': '2010-07-16',
+        'poster_path': 'https://example.com/poster.jpg',
+        'vote_average': 8.8,
+        'vote_count': 2835518,
+        'runtime': 148,
+        'certificate': {'rating': 'PG-13', 'body': 'MPAA'},
+      });
+      expect(data.runtimeSeconds, equals(148 * 60));
+      expect(data.rating, equals(8.8));
+      expect(data.certificate, equals('PG-13'));
+      expect(data.genres, equals(['Sci-Fi']));
+      expect(data.releaseDate, equals(DateTime.parse('2010-07-16')));
+    });
+
+    test('cast names come from the paired credits response, top 3 only', () {
+      final data = ImdbData.fromMovieApi(
+        {'id': 'tt1', 'title': 'X', 'overview': '', 'genres': [], 'release_date': ''},
+        {
+          'cast': [
+            {'name': 'A', 'order': 0},
+            {'name': 'B', 'order': 1},
+            {'name': 'C', 'order': 2},
+            {'name': 'D', 'order': 3},
+          ],
+        },
+      );
+      expect(data.stars, equals(['A', 'B', 'C']));
+    });
+  });
+
+  group('ImdbData.fromTvApi', () {
+    test('ended series derives endYear from last_air_date', () {
+      final data = ImdbData.fromTvApi({
+        'id': 'tt0944947',
+        'name': 'Game of Thrones',
+        'overview': '',
+        'genres': [],
+        'first_air_date': '2011-04-17',
+        'last_air_date': '2019-12-31',
+        'in_production': false,
+      });
+      expect(data.endYear, equals(2019));
+    });
+
+    test('ongoing series has no endYear', () {
+      final data = ImdbData.fromTvApi({
+        'id': 'tt1',
+        'name': 'X',
+        'overview': '',
+        'genres': [],
+        'first_air_date': '2020-01-01',
+        'last_air_date': '2024-01-01',
+        'in_production': true,
+      });
+      expect(data.endYear, isNull);
+    });
+  });
+
+  group('ImdbData.fromEpisodeApi', () {
+    test('runtime from the episode endpoint is already seconds — no conversion', () {
+      final data = ImdbData.fromEpisodeApi({
+        'id': 'tt1480055',
+        'name': 'Winter Is Coming',
+        'overview': '',
+        'air_date': '2011-04-17',
+        'season_number': 1,
+        'episode_number': 1,
+        'runtime': 3720,
+      }, parentId: 'tt0944947');
+      expect(data.runtimeSeconds, equals(3720));
+      expect(data.parentId, equals('tt0944947'));
+      expect(data.seasonNumber, equals(1));
+      expect(data.episodeNumber, equals(1));
     });
   });
 }

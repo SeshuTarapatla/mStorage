@@ -17,6 +17,7 @@ import '../../shell/app_shell.dart';
 import '../catalog_notifier.dart';
 import '../imdb_service.dart';
 import '../models/catalog_entry.dart';
+import '../models/imdb_data.dart';
 
 class CatalogCard extends StatefulWidget {
   final CatalogEntry entry;
@@ -204,7 +205,7 @@ class CatalogCardExpandedState extends ConsumerState<CatalogCardExpanded> {
 
     final imdbId = entry.imdbId;
     if (imdbId.isEmpty) return;
-    final urls = await ImdbService().fetchImages(imdbId);
+    final urls = await ImdbService().fetchImages(imdbId, ImdbKind.movie);
     if (!mounted || urls.isEmpty) return;
     final extras = urls.where((u) => u != thumb).toList();
     setState(() {

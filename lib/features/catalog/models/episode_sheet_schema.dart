@@ -19,6 +19,7 @@ class EpisodeSheetSchema {
     'language',         // 11
     'encoded',          // 12 — TRUE / FALSE
     'show',             // 13 — TRUE / FALSE
+    'runtime_min',      // 14 — episode runtime in minutes
   ];
 
   static const int iEpisodeImdbId = 0;
@@ -35,8 +36,9 @@ class EpisodeSheetSchema {
   static const int iLanguage      = 11;
   static const int iEncoded       = 12;
   static const int iShow          = 13;
+  static const int iRuntimeMin    = 14;
 
-  static const int columnCount = 14;
+  static const int columnCount = 15;
 
   static String get headerTsv => columns.join('\t');
 

@@ -1,0 +1,35 @@
+New columns for v1.7.0 — paste into the first empty cell after your last
+existing header (columns are append-only, don't reorder existing ones).
+
+=============================================================================
+Movies tab — existing headers end at column M (slide_images).
+Click cell N1 and paste this row:
+=============================================================================
+rating	runtime_min	certificate	stars
+
+=============================================================================
+Series tab — existing headers end at column J (show).
+(rating already exists at column G — nothing to do there, just add these two.)
+Click cell K1 and paste this row:
+=============================================================================
+certificate	stars
+
+=============================================================================
+Episodes tab — existing headers end at column N (show).
+(rating already exists at column I — nothing to do there.)
+Click cell O1 and paste this row:
+=============================================================================
+runtime_min
+
+-----------------------------------------------------------------------------
+Full header rows, for reference / if you're setting up a tab from scratch:
+-----------------------------------------------------------------------------
+
+Movies
+title	imdb_id	date	video_url	poster_url	size_mb	language	plot	genres	tags	encoded	show	slide_images	rating	runtime_min	certificate	stars
+
+Series
+series_imdb_id	title	start_year	end_year	poster_url	plot	rating	genres	tags	show	certificate	stars
+
+Episodes
+episode_imdb_id	series_imdb_id	season	episode	title	air_date	thumbnail_url	plot	rating	video_url	size_mb	language	encoded	show	runtime_min
