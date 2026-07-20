@@ -80,28 +80,11 @@ Same state-preservation guarantee, zero layout/ticker cost. (Note: if background
 playback while on other tabs is *intended* for the Player tab, keep Player on the
 `Offstage`-only path — `TickerMode` off would freeze its controls but not the audio.)
 
-### 1.7 Catalog first load waits on IMDB before showing anything  `P1 / M`
-`CatalogNotifier._buildEntries` awaits `ImdbService().resolve(imdbIds)` **before**
-emitting `CatalogLoaded`. On a fresh install (cold IMDB cache) with a 100-row sheet
-that's 20 sequential batch requests (batches of 5, awaited in a serial loop) — easily
-10–20 s of spinner for data the user doesn't need to start browsing.
-
-**Fix (two parts):**
-1. Emit `CatalogLoaded(rawEntries)` immediately after CSV parse, then merge IMDB data
-   into state as batches resolve (the UI already handles missing ratings gracefully).
-2. Fetch batches concurrently with a small cap: `Future.wait` over 3–4 batches at a time
-   instead of strictly serial.
-
 ### 1.8 Downscale decoded poster images for grid cards  `P2 / S`
 Catalog cards are ≤ 200 px wide but `CachedNetworkImage` decodes posters at full
 resolution (IMDB originals can be 2000+ px). Set `memCacheWidth: 400` (2× for DPR) on the
 grid/list thumbnails — typically cuts image memory by 10–20× and noticeably speeds up
 first-scroll of a large catalog.
-
-### 1.9 No timeout on catalog CSV fetch  `P2 / S`
-`http.get(csvUrl)` in `catalog_notifier.dart` has no `.timeout(...)`. A hung connection
-leaves the catalog on the loading spinner forever with no retry path. Add a 15 s timeout
-+ map it to the friendly error state (the IMDB service already does this correctly).
 
 ### 1.10 Debounce catalog search  `P3 / S`
 Every keystroke refilters + re-sorts the full list and rebuilds the masonry grid
@@ -327,8 +310,8 @@ failure mode would be a cryptic installer error).
 - 5.1 window bounds · 5.2 title-bar double-click
 
 **v1.6 — "Catalog at scale"**
-- 1.7 progressive IMDB merge · 1.8 memCacheWidth · 1.5 async downloads-list checks
-- 1.9 fetch timeout · 1.10 search debounce · 4.4 shortcut discoverability · 4.6 downloads sort
+- 1.8 memCacheWidth · 1.5 async downloads-list checks
+- 1.10 search debounce · 4.4 shortcut discoverability · 4.6 downloads sort
 
 **v1.7 — "Workflow & integration"**
 - 5.3 cross-tab toasts · 2.4/2.5 real progress for ffmpeg/7za · 2.3 date/time pickers

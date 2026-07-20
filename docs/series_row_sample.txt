@@ -1,3 +1,7 @@
-episode_imdb_id	series_title	series_imdb_id	season	episode	episode_title	air_date	video_url	poster_url	size_mb	language	encoded	show	tags	genres	plot
-tt3330796	Breaking Bad	tt0903747	2	1	Seven Thirty-Seven	2009-03-08	https://photos.google.com/album/example	https://drive.google.com/thumbnail?id=exampleId&sz=w400	850	English	TRUE	TRUE	AMC,Crime	Drama,Thriller	Walt and Jesse must deal with the aftermath of the cartel confrontation.
-tt3330796		tt0903747					https://photos.app.goo.gl/SAMPLE_URL	https://drive.google.com/thumbnail?id=exampleId&sz=w400	850	English	TRUE	TRUE													
+Series (one row per show)
+series_imdb_id	title	start_year	end_year	poster_url	plot	rating	genres	tags	show	certificate	stars
+tt0903747	Breaking Bad	2008	2013	https://drive.google.com/thumbnail?id=exampleId&sz=w400	A high school chemistry teacher turned methamphetamine producer teams up with a former student.	9.5	Crime,Drama,Thriller	AMC	TRUE	TV-MA	Bryan Cranston, Aaron Paul, Anna Gunn
+
+Episodes (one row per episode; series_imdb_id is the FK to the Series tab)
+episode_imdb_id	series_imdb_id	season	episode	title	air_date	thumbnail_url	plot	rating	video_url	size_mb	language	encoded	show	runtime_min
+tt3330796	tt0903747	2	1	Seven Thirty-Seven	2009-03-08	https://drive.google.com/thumbnail?id=exampleId&sz=w400	Walt and Jesse must deal with the aftermath of the cartel confrontation.	8.7	https://photos.app.goo.gl/SAMPLE_URL	850	English	TRUE	TRUE	47

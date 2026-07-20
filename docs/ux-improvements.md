@@ -284,13 +284,6 @@ the drag handle consistent with the app's visual language.
 
 ---
 
-### 7.6 "Load more images" button has no loading state transition  `P2`
-Clicking "Load more" shows a spinner, but the transition from button → spinner → new
-images appearing is abrupt. Fading the button out, animating the spinner in, then
-fading the new images in as a staggered batch would feel seamless.
-
----
-
 ## 8. Settings Screen
 
 ### 8.1 Group entrance stagger could be more dramatic  `P2`
@@ -387,7 +380,6 @@ ease would make the numbers flow rather than stutter.
 | 7.3 | Admin | Image select flash | P2 | Low |
 | 7.4 | Admin | Drag-drop target highlight | P2 | Low |
 | 7.5 | Admin | Genre drag handle style | P3 | Low |
-| 7.6 | Admin | Load more button transition | P2 | Low |
 | 8.1 | Settings | Group slide-in stagger | P2 | Low |
 | 8.3 | Settings | Password icon cross-fade | P3 | Low |
 | 9.1 | All | Cursor: click on all tap targets | P1 | Low |
