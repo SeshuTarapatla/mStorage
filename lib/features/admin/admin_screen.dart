@@ -86,6 +86,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   String? _pasteError;
   Timer?  _pasteErrorTimer;
 
+  // True while a manually-pasted image URL is being validated.
+  bool _addingImage = false;
+
   int? _selectedYear;
   int  _selectedMonth = 1;
   int  _selectedDay   = 1;
@@ -611,6 +614,94 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
     }
+  }
+
+  // ── Manual image add ─────────────────────────────────────────────────────
+  //
+  // The images API caps out at ~50 stills per title (an upstream limit, not
+  // ours — see v1.7.1). This lets the admin paste in a stray image the API
+  // missed: either a direct URL, or the full page source of an IMDb
+  // mediaviewer page (View Source → copy all). IMDb's site sits behind an
+  // AWS WAF bot challenge so we can't fetch mediaviewer pages ourselves —
+  // this only works because the admin's own browser already did that fetch.
+
+  // Matches the IMDb CDN's size/format suffix (e.g. `_FMjpg_UX1000_`)
+  // between `_V1_` and the extension, so it can be stripped for full res.
+  static final _imdbCdnRe =
+      RegExp(r'^(https://m\.media-amazon\.com/images/M/[^/]+?\._V1_)[^./]*(\.[a-zA-Z]+)$');
+
+  static final _htmlSniffRe =
+      RegExp(r'<(?:!doctype\s+html|html[\s>]|meta\s)', caseSensitive: false);
+  static final _metaImageTagRe = RegExp(
+    r'<meta[^>]*(?:property|name)\s*=\s*"(?:og:image|twitter:image)"[^>]*>',
+    caseSensitive: false,
+  );
+  static final _metaContentRe =
+      RegExp(r'content\s*=\s*"([^"]+)"', caseSensitive: false);
+  // Canonical link on a mediaviewer page carries the photo's `rm…` id, which
+  // also appears in an embedded JSON node — a fallback if og:image is absent.
+  static final _canonicalMediaviewerRe = RegExp(
+    r'<link[^>]*rel\s*=\s*"canonical"[^>]*href\s*=\s*"https://www\.imdb\.com/title/tt\d+/mediaviewer/(rm\d+)/?"',
+    caseSensitive: false,
+  );
+
+  String _normalizeImdbCdnUrl(String url) {
+    final m = _imdbCdnRe.firstMatch(url);
+    return m == null ? url : '${m.group(1)}${m.group(2)}';
+  }
+
+  String? _extractImageUrlFromHtml(String html) {
+    final tag = _metaImageTagRe.firstMatch(html)?.group(0);
+    final fromMeta = tag == null ? null : _metaContentRe.firstMatch(tag)?.group(1);
+    if (fromMeta != null && fromMeta.isNotEmpty) return fromMeta;
+
+    final rmId = _canonicalMediaviewerRe.firstMatch(html)?.group(1);
+    if (rmId == null) return null;
+    final node = RegExp('"id":"$rmId","url":"(https://m\\.media-amazon\\.com/[^"]+)"');
+    return node.firstMatch(html)?.group(1);
+  }
+
+  Future<void> _pasteImageFromClipboard() async {
+    final clipData = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = clipData?.text?.trim() ?? '';
+    if (text.isEmpty) return;
+
+    final isHtml = _htmlSniffRe.hasMatch(text);
+    final rawUrl = isHtml ? _extractImageUrlFromHtml(text) : text;
+
+    if (rawUrl == null || rawUrl.isEmpty ||
+        !(rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
+      _showPasteError(isHtml
+          ? "Couldn't find an image in the pasted page source."
+          : 'Invalid clipboard data. Expected an image URL or a pasted IMDb page source.');
+      return;
+    }
+
+    final url = _normalizeImdbCdnUrl(rawUrl);
+    if (_allImages.contains(url)) {
+      if (!_selected.contains(url)) setState(() => _selected.add(url));
+      return;
+    }
+
+    setState(() => _addingImage = true);
+    try {
+      final resp = await http.head(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      final contentType = resp.headers['content-type'] ?? '';
+      if (resp.statusCode != 200 || !contentType.startsWith('image/')) {
+        _showPasteError("That URL doesn't resolve to an image.");
+        return;
+      }
+    } catch (_) {
+      _showPasteError("Couldn't reach that image URL.");
+      return;
+    } finally {
+      if (mounted) setState(() => _addingImage = false);
+    }
+
+    setState(() {
+      _allImages = [..._allImages, url];
+      _selected  = [..._selected, url];
+    });
   }
 
   // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -1409,6 +1500,28 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
             const SizedBox(width: 6),
             Text('${_selected.length} selected',
                 style: TextStyle(fontSize: 11, color: kTextMuted)),
+            const Spacer(),
+            Tooltip(
+              message: 'Paste image URL or IMDb mediaviewer page source',
+              child: IconButton(
+                onPressed: _addingImage ? null : _pasteImageFromClipboard,
+                icon: _addingImage
+                    ? SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: kTextSecondary),
+                      )
+                    : const Icon(Icons.content_paste_rounded, size: 18),
+                style: IconButton.styleFrom(
+                  foregroundColor: kTextSecondary,
+                  backgroundColor: kSurfaceColor,
+                  side: BorderSide(color: kBorderColor),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.all(10),
+                ),
+              ),
+            ),
           ],
         ),
 
