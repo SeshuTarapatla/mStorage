@@ -10,6 +10,7 @@ import '../../../core/services/catalog_cache_manager.dart';
 import '../../../core/services/settings_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/tab_colors.dart';
+import '../../../core/util/filename_sanitizer.dart';
 import '../catalog_notifier.dart'
     show DownloadActive, DownloadRecord, downloadHistoryProvider, downloadProvider;
 import '../models/series_entry.dart';
@@ -676,7 +677,7 @@ class _EpisodeDetailRowState extends ConsumerState<_EpisodeDetailRow> {
   static const _kVideoExts = {'mp4', 'mkv', 'avi', 'mov', 'webm'};
 
   static String? _decodedVideoPath(String decodeDir, String title) {
-    final folder = Directory(p.join(decodeDir, title));
+    final folder = Directory(p.join(decodeDir, sanitizeFilename(title)));
     if (!folder.existsSync()) return null;
     try {
       for (final entry in folder.listSync()) {

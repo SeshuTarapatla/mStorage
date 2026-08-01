@@ -10,6 +10,7 @@ import '../../core/models/encode_config.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../../core/util/filename_sanitizer.dart';
 import '../shell/app_shell.dart';
 import '../shell/widgets/shared_widgets.dart';
 import 'encode_notifier.dart';
@@ -222,9 +223,9 @@ class _EncodeScreenState extends ConsumerState<EncodeScreen> {
     if (!mounted) return;
 
     final settings = ref.read(settingsProvider);
-    final title = _titleCtrl.text.trim().isEmpty
+    final title = sanitizeFilename(_titleCtrl.text.trim().isEmpty
         ? p.basenameWithoutExtension(_videoPath!)
-        : _titleCtrl.text.trim();
+        : _titleCtrl.text.trim());
     final outDir = settings.encodeOutputDirectory.isEmpty
         ? AppDirectories.encoded
         : settings.encodeOutputDirectory;

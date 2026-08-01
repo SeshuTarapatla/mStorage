@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/models/decode_config.dart';
 import '../../core/services/archive_service.dart';
 import '../../core/services/format_service.dart';
+import '../../core/util/filename_sanitizer.dart';
 
 enum DecodeStep { idle, extractingArchive, extractingFiles, done, error }
 
@@ -57,7 +58,7 @@ class DecodeNotifier extends Notifier<DecodeState> {
       final cacheDir = Directory(p.join(tmpDir.path, 'mstorage_cache', uid));
       await cacheDir.create(recursive: true);
 
-      final title = p.basenameWithoutExtension(config.videoPath);
+      final title = sanitizeFilename(p.basenameWithoutExtension(config.videoPath));
       final archivePath = p.join(cacheDir.path, '$title.archive');
 
       // Step 1 — split out the archive payload
