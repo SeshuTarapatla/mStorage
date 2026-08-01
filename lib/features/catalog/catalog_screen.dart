@@ -15,6 +15,7 @@ import '../../core/providers/player_request_provider.dart';
 import '../../core/services/settings_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/tab_colors.dart';
+import '../../core/util/filename_sanitizer.dart';
 import '../shell/app_shell.dart';
 import 'catalog_notifier.dart';
 import 'config_service.dart';
@@ -1449,7 +1450,7 @@ class _DownloadsListView extends ConsumerWidget {
   /// Returns the path of the first video file found in the decoded folder for
   /// this record, or null if not yet decoded.
   String? _decodedVideoPath(String decodeDir, DownloadRecord record) {
-    final folder = Directory(p.join(decodeDir, record.title));
+    final folder = Directory(p.join(decodeDir, sanitizeFilename(record.title)));
     if (!folder.existsSync()) return null;
     try {
       for (final entry in folder.listSync()) {

@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/catalog_cache_manager.dart';
 import '../../core/services/settings_service.dart';
+import '../../core/util/filename_sanitizer.dart';
 import 'imdb_service.dart';
 import 'models/catalog_entry.dart';
 import 'models/imdb_data.dart';
@@ -554,6 +555,7 @@ class DownloadNotifier extends Notifier<DownloadState> {
           m?.group(1)?.trim().replaceAll(RegExp(r'''["']'''), '') ?? '';
     }
     if (filename.isEmpty) filename = '${job.title}.mp4';
+    filename = sanitizeFilename(filename);
 
     final total = response.contentLength ?? 0;
     final downloadDir = _resolveDir();
